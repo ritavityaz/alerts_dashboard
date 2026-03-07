@@ -27,7 +27,7 @@ function applyColors(geojson, countByZone, fixedMax) {
   for (const f of geojson.features) {
     const count = countByZone.get(f.properties.name_he) || 0;
     f.properties.alertCount = count;
-    f.properties.color = count > 0 ? d3.color(colorScale(count)).formatHex() : "transparent";
+    f.properties.color = count > 0 ? d3.color(colorScale(count)).formatHex() : "rgba(0,0,0,0)";
   }
 
   renderLegend(maxCount);

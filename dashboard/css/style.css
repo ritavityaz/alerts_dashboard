@@ -1,0 +1,75 @@
+@import "tailwindcss";
+@import "maplibre-gl/dist/maplibre-gl.css";
+
+#map-container canvas {
+  filter: brightness(1.4);
+}
+
+/* Dual range slider */
+.range-slider {
+  position: relative;
+  height: 20px;
+}
+
+.range-slider input[type="range"] {
+  position: absolute;
+  width: 100%;
+  top: 0;
+  margin: 0;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+  background: none;
+  height: 20px;
+}
+
+.range-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  pointer-events: all;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #a5b4fc;
+  border: 2px solid #6366f1;
+  cursor: pointer;
+  position: relative;
+  z-index: 2;
+}
+
+.range-track {
+  position: absolute;
+  top: 8px;
+  left: 0;
+  right: 0;
+  height: 4px;
+  border-radius: 2px;
+  background: #1e293b;
+}
+
+.range-highlight {
+  position: absolute;
+  top: 8px;
+  height: 4px;
+  border-radius: 2px;
+  background: #6366f1;
+}
+
+.tooltip {
+  @apply absolute pointer-events-none bg-black/90 text-white text-xs leading-relaxed px-3 py-2 rounded hidden z-50 max-w-[250px];
+}
+
+/* RTL overrides */
+[dir="rtl"] .float-right {
+  float: left;
+}
+
+[dir="rtl"] #lang-toggle {
+  right: auto;
+  left: 0;
+  flex-direction: row-reverse;
+}
+
+[dir="rtl"] #context-toggle {
+  margin-left: 0;
+  margin-right: auto;
+}

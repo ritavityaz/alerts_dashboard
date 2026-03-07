@@ -1,0 +1,187 @@
+import * as d3 from "d3";
+import { lang, t } from "./i18n.js";
+
+function toFractionalHour(date) {
+  return date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
+}
+
+function dayslice(alerts) {
+  const slices = [];
+  for (const a of alerts) {
+    if (!a._end) {
+      slices.push({ ...a, day: d3.timeDay(a._start), y0: toFractionalHour(a._start), y1: null });
+      continue;
+    }
+
+    let cursor = new Date(a._start);
+    const end = a._end;
+
+    while (cursor < end) {
+      const day = d3.timeDay(cursor);
+      const nextDay = d3.timeDay.offset(day, 1);
+      const sliceEnd = end < nextDay ? end : nextDay;
+
+      slices.push({
+        ...a,
+        day,
+        y0: toFractionalHour(cursor),
+        y1: cursor < sliceEnd ? toFractionalHour(sliceEnd === nextDay ? new Date(nextDay - 1) : sliceEnd) : null,
+      });
+
+      cursor = nextDay;
+    }
+  }
+  return slices;
+}
+
+const threatColors = {
+  missiles: "#ef4444",
+  drones: "#8b5cf6",
+  terrorists: "#f59e0b",
+};
+
+export function createTimeline(container, allAlerts) {
+  const margin = { top: 30, right: 16, bottom: 16, left: 44 };
+  const width = container.clientWidth;
+  const height = 600;
+
+  // Fixed day domain from all alerts
+  const days = [...new Set(allAlerts.map((a) => +d3.timeDay(a._start)))].sort((a, b) => a - b).map((d) => new Date(d));
+
+  // Color legend
+  const threatI18nKeys = {
+    missiles: "timelineMissiles",
+    drones: "timelineDrones",
+    terrorists: "timelineTerrorists",
+  };
+  const legendDiv = d3.select(container).append("div")
+    .attr("class", "flex gap-4 px-3 pt-3 text-xs justify-end");
+  const legendLabels = [];
+  for (const [type, color] of Object.entries(threatColors)) {
+    const item = legendDiv.append("span").attr("class", "flex items-center gap-1.5");
+    item.append("span")
+      .style("width", "10px").style("height", "10px")
+      .style("background", color).style("border-radius", "2px")
+      .style("display", "inline-block").style("opacity", "0.7");
+    const label = item.append("span").text(t(threatI18nKeys[type]))
+      .style("color", "#94a3b8");
+    legendLabels.push({ el: label, key: threatI18nKeys[type] });
+  }
+
+  function updateLegendLabels() {
+    for (const { el, key } of legendLabels) {
+      el.text(t(key));
+    }
+  }
+
+  const svg = d3.select(container).append("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("viewBox", [0, 0, width, height]);
+
+  const x = d3.scaleBand()
+    .domain(days)
+    .range([margin.left, width - margin.right])
+    .padding(0.1);
+
+  const y = d3.scaleLinear()
+    .domain([0, 24])
+    .range([margin.top, height - margin.bottom]);
+
+  // X-axis (top)
+  svg.append("g")
+    .attr("transform", `translate(0,${margin.top})`)
+    .call(d3.axisTop(x).tickFormat(d3.timeFormat("%-d")).tickSize(0))
+    .call((g) => g.select(".domain").remove())
+    .call((g) => g.selectAll("text")
+      .attr("fill", "#64748b")
+      .attr("font-size", x.bandwidth() < 12 ? "7px" : "9px")
+    );
+
+  // Month labels
+  const monthStarts = days.filter((d, i) => i === 0 || d.getMonth() !== days[i - 1].getMonth());
+  svg.selectAll(".month-label")
+    .data(monthStarts)
+    .join("text")
+    .attr("class", "month-label")
+    .attr("x", (d) => x(d) + x.bandwidth() / 2)
+    .attr("y", 10)
+    .attr("text-anchor", "middle")
+    .attr("fill", "#94a3b8")
+    .attr("font-size", "10px")
+    .attr("font-weight", "bold")
+    .text(d3.timeFormat("%b"));
+
+  // Y-axis (left)
+  svg.append("g")
+    .attr("transform", `translate(${margin.left},0)`)
+    .call(
+      d3.axisLeft(y)
+        .tickValues(d3.range(0, 25, 3))
+        .tickFormat((h) => {
+          if (h === 0 || h === 24) return "12am";
+          if (h === 12) return "12pm";
+          return h < 12 ? `${h}am` : `${h - 12}pm`;
+        })
+        .tickSize(-(width - margin.left - margin.right))
+    )
+    .call((g) => g.select(".domain").remove())
+    .call((g) => g.selectAll(".tick line").attr("stroke", "#1e293b").attr("stroke-dasharray", "2,2"))
+    .call((g) => g.selectAll(".tick text").attr("fill", "#64748b").attr("font-size", "10px"));
+
+  const dataGroup = svg.append("g");
+  const tooltip = document.getElementById("tooltip");
+  const timeFmt = d3.timeFormat("%H:%M");
+
+  function update(alerts) {
+    const slices = dayslice(alerts);
+
+    const ranged = slices.filter((d) => d.y1 !== null);
+    dataGroup.selectAll(".alert-bar")
+      .data(ranged)
+      .join("rect")
+      .attr("class", "alert-bar")
+      .attr("x", (d) => x(d.day))
+      .attr("width", x.bandwidth())
+      .attr("y", (d) => y(d.y0))
+      .attr("height", (d) => Math.max(1, y(d.y1) - y(d.y0)))
+      .attr("fill", (d) => threatColors[d.threat_type] || "#6366f1")
+      .attr("fill-opacity", 0.5)
+      .attr("rx", 1)
+      .on("mousemove", (event, d) => {
+        tooltip.style.display = "block";
+        tooltip.style.left = `${event.pageX + 12}px`;
+        tooltip.style.top = `${event.pageY - 12}px`;
+        const startStr = timeFmt(d._start);
+        const endStr = d._end ? timeFmt(d._end) : "";
+        const name = lang === "he" ? (d.NAME_HE || d.data) : (d.NAME_EN || d.data);
+        const threat = t(threatI18nKeys[d.threat_type]);
+        tooltip.innerHTML = `<strong>${name}</strong><br>${threat}<br>${startStr}${endStr ? " – " + endStr : ""}`;
+      })
+      .on("mouseleave", () => { tooltip.style.display = "none"; });
+
+    const dots = slices.filter((d) => d.y1 === null);
+    dataGroup.selectAll(".alert-dot")
+      .data(dots)
+      .join("circle")
+      .attr("class", "alert-dot")
+      .attr("cx", (d) => x(d.day) + x.bandwidth() / 2)
+      .attr("cy", (d) => y(d.y0))
+      .attr("r", Math.min(x.bandwidth() / 3, 3))
+      .attr("fill", (d) => threatColors[d.threat_type] || "#6366f1")
+      .attr("fill-opacity", 0.7)
+      .on("mousemove", (event, d) => {
+        tooltip.style.display = "block";
+        tooltip.style.left = `${event.pageX + 12}px`;
+        tooltip.style.top = `${event.pageY - 12}px`;
+        const name = lang === "he" ? (d.NAME_HE || d.data) : (d.NAME_EN || d.data);
+        const threat = t(threatI18nKeys[d.threat_type]);
+        tooltip.innerHTML = `<strong>${name}</strong><br>${threat}<br>${timeFmt(d._start)}`;
+      })
+      .on("mouseleave", () => { tooltip.style.display = "none"; });
+  }
+
+  update(allAlerts);
+
+  return { update, updateLegendLabels };
+}

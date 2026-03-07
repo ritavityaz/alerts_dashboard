@@ -1,0 +1,68 @@
+const translations = {
+  en: {
+    title: "Israel Alert Dashboard",
+    allThreats: "All threats",
+    missiles: "Missiles",
+    drones: "Drones",
+    infiltrations: "Infiltrations",
+    cityPlaceholder: "City...",
+    allZones: "All zones",
+    country: "Country",
+    zone: "Zone",
+    city: "City",
+    alerts: "alerts",
+    totalAlerts: "Total Alerts",
+    citiesAffected: "Cities Affected",
+    peakDay: "Peak Day",
+    threats: "Threats",
+    allPrefix: "All",
+    missilePrefix: "Missile",
+    dronePrefix: "Drone",
+    infiltrationPrefix: "Infiltration",
+    alertsSuffix: "Alerts",
+    totalSuffix: "total alerts",
+    inWord: "in",
+    timelineMissiles: "Missiles",
+    timelineDrones: "Drones",
+    timelineTerrorists: "Terrorists",
+    alertTimeline: "Alert Timeline",
+  },
+  he: {
+    title: "לוח בקרה התרעות ישראל",
+    allThreats: "כל האיומים",
+    missiles: "ירי רקטות וטילים",
+    drones: "חדירת כלי טיס עוין",
+    infiltrations: "חדירת מחבלים",
+    cityPlaceholder: "עיר...",
+    allZones: "כל האזורים",
+    country: "ארץ",
+    zone: "אזור",
+    city: "עיר",
+    alerts: "התרעות",
+    totalAlerts: 'סה"כ התרעות',
+    citiesAffected: "ערים מושפעות",
+    peakDay: "יום שיא",
+    threats: "איומים",
+    allPrefix: "כל",
+    missilePrefix: "ירי רקטות וטילים",
+    dronePrefix: "חדירת כלי טיס עוין",
+    infiltrationPrefix: "חדירת מחבלים",
+    alertsSuffix: "התרעות",
+    totalSuffix: 'התרעות סה"כ',
+    inWord: "ב",
+    timelineMissiles: "ירי רקטות וטילים",
+    timelineDrones: "חדירת כלי טיס עוין",
+    timelineTerrorists: "חדירת מחבלים",
+    alertTimeline: "ציר זמן התרעות",
+  },
+};
+
+export let lang = "en";
+
+export function setLang(newLang) {
+  lang = newLang;
+}
+
+export function t(key) {
+  return translations[lang][key] || key;
+}

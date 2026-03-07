@@ -1,6 +1,6 @@
 [build]
   command = "npm run build"
-  publish = "dashboard/dist"
+  publish = "dist"
 
 [[headers]]
   for = "/assets/*"

@@ -6,17 +6,22 @@ import { lang, setLang, t } from "./i18n.js";
 const DATA_URL = import.meta.env.VITE_DATA_URL || "";
 
 async function init() {
-  const [csv, geojson, matchedCsv] = await Promise.all([
-    d3.csv(`${DATA_URL}/data/alerts_typed.csv`),
-    d3.json(`${DATA_URL}/geo/pikud_haoref_zones.geojson`),
-    d3.csv(`${DATA_URL}/data/alerts_matched.csv`),
+  const [cube, geojson, eventsData] = await Promise.all([
+    d3.json(`${DATA_URL}/optimized/alerts_cube.json`),
+    d3.json(`${DATA_URL}/optimized/zones.geojson`),
+    d3.json(`${DATA_URL}/optimized/timeline_events.json`),
   ]);
 
-  // Keep actual alerts only (category 1=missiles, 2=drones, 10=infiltration)
-  const cutoff = new Date(2026, 1, 26); // Feb 26, local time
-  const allAlerts = csv.filter((d) => ["1", "2", "10"].includes(d.category));
-  for (const a of allAlerts) a._ts = new Date(a.alertDate);
-  const alerts = allAlerts.filter((d) => d._ts >= cutoff);
+  // Hydrate alerts from compact cube format
+  const cats = ["1", "2", "10"];
+  const alerts = [];
+  for (let i = 0; i < cube.c.length; i++) {
+    const data = cube.cities[cube.c[i]];
+    const _ts = new Date(cube.hours[cube.h[i]] + ":00:00Z");
+    const category = cats[cube.t[i]];
+    const count = cube.n[i];
+    for (let j = 0; j < count; j++) alerts.push({ data, _ts, category });
+  }
 
   console.log(`Loaded ${alerts.length} alerts, ${geojson.features.length} zones`);
 
@@ -78,7 +83,7 @@ async function init() {
   const { ready, recolor, zoomToZone, zoomToCity, highlightCity } = createMap(document.getElementById("map-container"), geojson, countByZone);
 
   // Sparkline area chart (alerts per day)
-  const minDate = cutoff;
+  const minDate = d3.min(alerts, (d) => d._ts);
   const maxDate = d3.max(alerts, (d) => d._ts);
 
   const sparkContainer = document.getElementById("sparkline");
@@ -363,17 +368,19 @@ async function init() {
   // Initial stats (wait for map sources to be ready)
   ready.then(() => applyFilters());
 
-  // Timeline chart
-  const matched = matchedCsv
-    .filter((d) => ["missiles", "drones", "terrorists"].includes(d.threat_type))
-    .map((d) => {
-      const ts = new Date(d.ts);
-      const warning = d.warning_ts ? new Date(d.warning_ts) : null;
-      const resolved = d.resolved_ts ? new Date(d.resolved_ts) : null;
-      const start = warning && warning < ts ? warning : ts;
-      return { ...d, _start: start, _end: resolved };
-    })
-    .filter((d) => d._start >= cutoff);
+  // Hydrate timeline events from compact format
+  const threatTypes = ["missiles", "drones", "terrorists"];
+  const eventsBase = new Date(eventsData.base).getTime();
+  const matched = [];
+  for (let i = 0; i < eventsData.c.length; i++) {
+    const data = eventsData.cities[eventsData.c[i]];
+    const threat_type = threatTypes[eventsData.t[i]];
+    const _start = new Date(eventsBase + eventsData.s[i] * 60000);
+    const _end = eventsData.r[i] != null ? new Date(eventsBase + eventsData.r[i] * 60000) : null;
+    const NAME_HE = data;
+    const NAME_EN = cityHeToEn.get(data) || data;
+    matched.push({ data, threat_type, _start, _end, NAME_HE, NAME_EN });
+  }
 
   const { update: updateTimeline, updateLegendLabels } = createTimeline(document.getElementById("timeline-container"), matched);
   const timelineTitle = document.getElementById("timeline-title");

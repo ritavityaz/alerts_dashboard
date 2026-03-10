@@ -36,6 +36,23 @@
   z-index: 2;
 }
 
+.range-slider input[type="range"]::-moz-range-thumb {
+  pointer-events: all;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #a5b4fc;
+  border: 2px solid #6366f1;
+  cursor: pointer;
+  position: relative;
+  z-index: 2;
+}
+
+.range-slider input[type="range"]::-moz-range-track {
+  background: none;
+  border: none;
+}
+
 .range-track {
   position: absolute;
   top: 8px;

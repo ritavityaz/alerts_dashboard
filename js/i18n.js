@@ -26,6 +26,11 @@ const translations = {
     timelineDrones: "Drones",
     timelineTerrorists: "Terrorists",
     alertTimeline: "Alert Timeline",
+    reset: "Reset",
+    longestQuiet: "Longest Quiet",
+    today: "Today",
+    past3days: "3 days",
+    sinceStart: "All time",
   },
   he: {
     title: "לוח בקרה התרעות ישראל",
@@ -54,6 +59,11 @@ const translations = {
     timelineDrones: "חדירת כלי טיס עוין",
     timelineTerrorists: "חדירת מחבלים",
     alertTimeline: "ציר זמן התרעות",
+    reset: "איפוס",
+    longestQuiet: "השקט הארוך ביותר",
+    today: "היום",
+    past3days: "3 ימים",
+    sinceStart: "מתחילת המלחמה",
   },
 };
 

@@ -61,12 +61,10 @@ async function init() {
   }
 
   const fmt = d3.format(",");
-  const filteredCount = document.getElementById("filtered-count");
   const threatSelect = document.getElementById("threat-filter");
 
   const subtitle = document.getElementById("subtitle");
   subtitle.textContent = `${fmt(alerts.length)} ${t("totalSuffix")}`;
-  filteredCount.textContent = `${fmt(alerts.length)} ${t("alerts")}`;
 
   // Stats panel elements
   const statTotal = document.getElementById("stat-total");
@@ -76,6 +74,10 @@ async function init() {
   const statMissiles = document.querySelector("#stat-missiles .font-bold");
   const statDrones = document.querySelector("#stat-drones .font-bold");
   const statInfiltration = document.querySelector("#stat-infiltration .font-bold");
+  const statQuietToday = document.querySelector("#stat-quiet-today .font-bold");
+  const statQuiet3d = document.querySelector("#stat-quiet-3d .font-bold");
+  const statQuietAll = document.querySelector("#stat-quiet-all .font-bold");
+  const quietRows = [statQuietToday.parentElement, statQuiet3d.parentElement, statQuietAll.parentElement];
   const dayFmt = d3.timeFormat("%b %d");
 
   // Create map
@@ -198,6 +200,7 @@ async function init() {
 
   updateHighlight();
 
+  let sliderRaf = null;
   function onSliderChange() {
     // Prevent crossing
     if (+rangeMin.value > +rangeMax.value) {
@@ -208,7 +211,8 @@ async function init() {
     startLabel.textContent = sliderDateLabel(startDate);
     endLabel.textContent = sliderDateLabel(endDate);
     updateHighlight();
-    applyFilters();
+    if (sliderRaf) cancelAnimationFrame(sliderRaf);
+    sliderRaf = requestAnimationFrame(() => { sliderRaf = null; _skipTimeline = true; applyFilters(); _skipTimeline = false; });
   }
 
   // Context toggle
@@ -247,6 +251,53 @@ async function init() {
     btn.addEventListener("click", () => setCtx(btn.dataset.ctx));
   }
 
+  function longestGap(eventsArr, from, to, { fromFirstAlert = false } = {}) {
+    // Build intervals [start, end] for each alert
+    const intervals = eventsArr
+      .filter((d) => d._start <= to && +(d._end || d._start) >= +from)
+      .map((d) => [+d._start, +(d._end || d._start)])
+      .sort((a, b) => a[0] - b[0]);
+    if (intervals.length === 0) return { ms: 0, start: null, end: null };
+    // Merge overlapping intervals to find covered periods
+    const merged = [intervals[0].slice()];
+    for (let i = 1; i < intervals.length; i++) {
+      const last = merged[merged.length - 1];
+      if (intervals[i][0] <= last[1]) {
+        last[1] = Math.max(last[1], intervals[i][1]);
+      } else {
+        merged.push(intervals[i].slice());
+      }
+    }
+    // Find longest gap between merged intervals
+    let max = 0, gapStart = null, gapEnd = null;
+    // Gap before first interval (skip if starting from first alert)
+    if (!fromFirstAlert) {
+      const headGap = merged[0][0] - +from;
+      if (headGap > max) { max = headGap; gapStart = +from; gapEnd = merged[0][0]; }
+    }
+    for (let i = 1; i < merged.length; i++) {
+      const gap = merged[i][0] - merged[i - 1][1];
+      if (gap > max) { max = gap; gapStart = merged[i - 1][1]; gapEnd = merged[i][0]; }
+    }
+    // Gap after last interval
+    const tailGap = +to - merged[merged.length - 1][1];
+    if (tailGap > max) { max = tailGap; gapStart = merged[merged.length - 1][1]; gapEnd = +to; }
+    return { ms: max, start: gapStart, end: gapEnd };
+  }
+
+  function fmtDuration(ms) {
+    const totalMin = Math.floor(ms / 60000);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    if (h >= 24) {
+      const d = Math.floor(h / 24);
+      const rh = h % 24;
+      return rh > 0 ? `${d}d ${rh}h` : `${d}d`;
+    }
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  }
+
+  let _skipTimeline = false;
   function applyFilters() {
     const threat = threatSelect.value;
     const zone = zoneSelect.value;
@@ -280,7 +331,6 @@ async function init() {
 
     recolor(counts, fixedMax);
     highlightCity(selectedCityHe);
-    filteredCount.textContent = `${fmt(filtered.length)} ${t("alerts")}`;
 
     // Update stats panel (ignores threat filter)
     let statsBase = alerts;
@@ -309,11 +359,41 @@ async function init() {
     statDrones.textContent = fmt(byCat.get("2") || 0);
     statInfiltration.textContent = fmt(byCat.get("10") || 0);
 
-    updateTimelineFilter();
+    // Longest quiet periods (using minute-resolution timeline events)
+    const now = new Date();
+    const todayStart = d3.timeDay(now);
+    const threeDaysAgo = d3.timeDay.offset(todayStart, -3);
+    let quietEvents = matched;
+    if (currentCtx === "zone" && zone !== "all") {
+      quietEvents = quietEvents.filter((d) => cityToZone.get(d.data) === zone);
+    } else if (currentCtx === "city" && selectedCityHe) {
+      quietEvents = quietEvents.filter((d) => d.data === selectedCityHe);
+    }
+    const gapToday = longestGap(quietEvents, todayStart, now);
+    const gap3d = longestGap(quietEvents, threeDaysAgo, now);
+    const gapAll = longestGap(quietEvents, minDate, now, { fromFirstAlert: true });
+    statQuietToday.textContent = fmtDuration(gapToday.ms);
+    statQuiet3d.textContent = fmtDuration(gap3d.ms);
+    statQuietAll.textContent = fmtDuration(gapAll.ms);
+    statQuietToday.parentElement.dataset.gapStart = gapToday.start;
+    statQuietToday.parentElement.dataset.gapEnd = gapToday.end;
+    statQuiet3d.parentElement.dataset.gapStart = gap3d.start;
+    statQuiet3d.parentElement.dataset.gapEnd = gap3d.end;
+    statQuietAll.parentElement.dataset.gapStart = gapAll.start;
+    statQuietAll.parentElement.dataset.gapEnd = gapAll.end;
+
+    if (!_skipTimeline) {
+      updateTimelineFilter();
+      highlightGap(null, null);
+      for (const row of quietRows) row.classList.remove("bg-emerald-900/40", "ring-1", "ring-emerald-500/30");
+    }
+    updateResetVisibility();
   }
 
   rangeMin.addEventListener("input", onSliderChange);
   rangeMax.addEventListener("input", onSliderChange);
+  rangeMin.addEventListener("change", updateTimelineFilter);
+  rangeMax.addEventListener("change", updateTimelineFilter);
   threatSelect.addEventListener("change", applyFilters);
   zoneSelect.addEventListener("change", () => {
     cityInput.value = "";
@@ -365,6 +445,35 @@ async function init() {
     setCtx("city");
   });
 
+  // Reset button
+  const resetBtn = document.getElementById("reset-filters");
+
+  function updateResetVisibility() {
+    const isDefault = threatSelect.value === "all"
+      && zoneSelect.value === "all"
+      && !selectedCityHe
+      && +rangeMin.value === 0
+      && +rangeMax.value === totalHours;
+    resetBtn.classList.toggle("hidden", isDefault);
+  }
+
+  resetBtn.addEventListener("click", () => {
+    threatSelect.value = "all";
+    zoneSelect.value = "all";
+    cityInput.value = "";
+    selectedCityHe = null;
+    highlightCity(null);
+    rangeMin.value = 0;
+    rangeMax.value = totalHours;
+    startLabel.textContent = dateFmt(minDate);
+    endLabel.textContent = dateFmt(maxDate);
+    updateHighlight();
+    contextToggle.classList.add("hidden");
+    currentCtx = "country";
+    applyFilters();
+    zoomToZone("all");
+  });
+
   // Initial stats (wait for map sources to be ready)
   ready.then(() => applyFilters());
 
@@ -382,8 +491,27 @@ async function init() {
     matched.push({ data, threat_type, _start, _end, NAME_HE, NAME_EN });
   }
 
-  const { update: updateTimeline, updateLegendLabels } = createTimeline(document.getElementById("timeline-container"), matched);
+  const { update: updateTimeline, updateLegendLabels, highlightGap } = createTimeline(document.getElementById("timeline-container"), matched);
   const timelineTitle = document.getElementById("timeline-title");
+
+  // Quiet period click-to-highlight
+  for (const el of quietRows) {
+    el.classList.add("cursor-pointer", "rounded", "px-1", "-mx-1", "transition-colors");
+    el.addEventListener("click", () => {
+      const s = +el.dataset.gapStart;
+      const e = +el.dataset.gapEnd;
+      if (!s || !e) return;
+      // Toggle: click again to deselect
+      const wasActive = el.classList.contains("bg-emerald-900/40");
+      for (const row of quietRows) row.classList.remove("bg-emerald-900/40", "ring-1", "ring-emerald-500/30");
+      if (wasActive) {
+        highlightGap(null, null);
+      } else {
+        el.classList.add("bg-emerald-900/40", "ring-1", "ring-emerald-500/30");
+        highlightGap(s, e);
+      }
+    });
+  }
 
   // Map category codes to threat_type for timeline filtering
   const categoryToThreat = { "1": "missiles", "2": "drones", "10": "terrorists" };

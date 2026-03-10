@@ -183,5 +183,39 @@ export function createTimeline(container, allAlerts) {
 
   update(allAlerts);
 
-  return { update, updateLegendLabels };
+  const highlightGroup = svg.append("g");
+
+  function highlightGap(startMs, endMs) {
+    highlightGroup.selectAll("*").remove();
+    if (startMs == null || endMs == null) return;
+    const start = new Date(startMs);
+    const end = new Date(endMs);
+
+    // Iterate day columns that fall within the gap
+    for (const day of days) {
+      const dayStart = day;
+      const dayEnd = d3.timeDay.offset(day, 1);
+      if (+dayEnd <= startMs || +dayStart >= endMs) continue;
+
+      const colX = x(day);
+      if (colX == null) continue;
+
+      const hourFrom = +dayStart < startMs ? toFractionalHour(start) : 0;
+      const hourTo = +dayEnd > endMs ? toFractionalHour(end) : 24;
+
+      highlightGroup.append("rect")
+        .attr("x", colX)
+        .attr("width", x.bandwidth())
+        .attr("y", y(hourFrom))
+        .attr("height", Math.max(1, y(hourTo) - y(hourFrom)))
+        .attr("fill", "#22c55e")
+        .attr("fill-opacity", 0.15)
+        .attr("stroke", "#22c55e")
+        .attr("stroke-opacity", 0.4)
+        .attr("stroke-width", 0.5)
+        .attr("rx", 1);
+    }
+  }
+
+  return { update, updateLegendLabels, highlightGap };
 }

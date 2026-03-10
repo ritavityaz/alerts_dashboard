@@ -6,9 +6,9 @@
   <title>Israel Alerts Dashboard</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
-<body class="bg-gray-950 text-gray-200 p-4 font-sans">
+<body class="bg-gray-950 text-gray-200 p-2 sm:p-4 font-sans">
   <header class="text-center mb-6 relative">
-    <h1 id="page-title" class="text-2xl font-bold">Israel Alert Dashboard</h1>
+    <h1 id="page-title" class="text-xl sm:text-2xl font-bold">Israel Alert Dashboard</h1>
     <p id="subtitle" class="text-gray-500 text-sm mt-1"></p>
     <div id="lang-toggle" class="absolute right-0 top-0 flex text-xs">
       <button data-lang="en" class="px-2 py-1 rounded-l border border-gray-700 bg-indigo-600 text-white cursor-pointer">EN</button>
@@ -17,20 +17,20 @@
   </header>
 
   <main id="app" class="max-w-7xl mx-auto">
-    <div class="mb-3 flex items-center gap-3">
+    <div id="filter-bar" class="mb-3 flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-3">
       <select id="threat-filter" class="bg-gray-800 text-gray-200 text-sm border border-gray-700 rounded px-3 py-1.5">
         <option value="all" data-i18n="allThreats">All threats</option>
         <option value="1" data-i18n="missiles">Missiles</option>
         <option value="2" data-i18n="drones">Drones</option>
         <option value="10" data-i18n="infiltrations">Infiltrations</option>
       </select>
-      <input id="city-filter" list="city-list" placeholder="City..." class="bg-gray-800 text-gray-200 text-sm border border-gray-700 rounded px-3 py-1.5 w-40">
+      <input id="city-filter" list="city-list" placeholder="City..." class="bg-gray-800 text-gray-200 text-sm border border-gray-700 rounded px-3 py-1.5 w-full sm:w-40 order-last sm:order-none">
       <datalist id="city-list"></datalist>
       <select id="zone-filter" class="bg-gray-800 text-gray-200 text-sm border border-gray-700 rounded px-3 py-1.5">
         <option value="all" data-i18n="allZones">All zones</option>
       </select>
       <button id="reset-filters" class="text-gray-500 text-sm hover:text-gray-200 cursor-pointer hidden" data-i18n="reset">Reset</button>
-      <div id="context-toggle" class="ml-auto flex text-xs hidden">
+      <div id="context-toggle" class="sm:ml-auto flex text-xs hidden">
         <button data-ctx="country" data-i18n="country" class="px-2 py-1 rounded-l border border-gray-700 bg-gray-800 text-gray-400 hover:text-white cursor-pointer">Country</button>
         <button data-ctx="zone" data-i18n="zone" class="px-2 py-1 border-t border-b border-gray-700 bg-gray-800 text-gray-400 hover:text-white cursor-pointer">Zone</button>
         <button data-ctx="city" data-i18n="city" class="px-2 py-1 rounded-r border border-gray-700 bg-indigo-600 text-white cursor-pointer">City</button>
@@ -42,23 +42,23 @@
       <span id="legend-max">0</span>
       <span data-i18n="alerts">alerts</span>
     </div>
-    <div class="flex gap-3">
-      <div id="map-container" class="bg-gray-900 border border-gray-800 rounded-lg flex-1 min-w-0"></div>
-      <div id="stats-panel" class="flex flex-col gap-3 w-48 shrink-0">
-        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+    <div id="map-stats-row" class="flex flex-col sm:flex-row gap-3">
+      <div id="map-container" class="bg-gray-900 border border-gray-800 rounded-lg sm:flex-1 min-w-0"></div>
+      <div id="stats-panel" class="flex flex-row flex-wrap sm:flex-col sm:flex-nowrap gap-3 w-full sm:w-48 sm:shrink-0">
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 flex-1 basis-[calc(50%-0.375rem)] sm:basis-auto">
           <div class="text-gray-500 text-xs mb-1" data-i18n="totalAlerts">Total Alerts</div>
           <div id="stat-total" class="text-2xl font-bold">0</div>
         </div>
-        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 flex-1 basis-[calc(50%-0.375rem)] sm:basis-auto">
           <div class="text-gray-500 text-xs mb-1" data-i18n="citiesAffected">Cities Affected</div>
           <div id="stat-cities" class="text-2xl font-bold">0</div>
         </div>
-        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 flex-1 basis-[calc(50%-0.375rem)] sm:basis-auto">
           <div class="text-gray-500 text-xs mb-1" data-i18n="peakDay">Peak Day</div>
           <div id="stat-peak-day" class="text-lg font-bold">—</div>
           <div id="stat-peak-count" class="text-gray-400 text-xs"></div>
         </div>
-        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 flex-1 basis-[calc(50%-0.375rem)] sm:basis-auto">
           <div class="text-gray-500 text-xs mb-1" data-i18n="threats">Threats</div>
           <div id="stat-missiles" class="text-sm"><span class="text-gray-400" data-i18n="missiles">Missiles</span> <span class="font-bold float-right">0</span></div>
           <div id="stat-drones" class="text-sm"><span class="text-gray-400" data-i18n="drones">Drones</span> <span class="font-bold float-right">0</span></div>
@@ -81,12 +81,12 @@
     </div>
 
     <h2 id="timeline-title" class="text-lg font-bold mt-8 mb-3" data-i18n="alertTimeline">Alert Timeline</h2>
-    <div class="flex gap-3">
+    <div id="timeline-heatmap-row" class="flex flex-col sm:flex-row gap-3">
       <div id="timeline-container" class="bg-gray-900 border border-gray-800 rounded-lg overflow-x-auto flex-1 min-w-0"></div>
       <div id="heatmap-container" class="bg-gray-900 border border-gray-800 rounded-lg shrink-0"></div>
     </div>
     <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 mt-3">
-      <div class="flex gap-8">
+      <div id="quiet-stats-inner" class="flex flex-col sm:flex-row gap-4 sm:gap-8">
       <div>
         <div class="text-gray-400 text-sm font-semibold mb-2" data-i18n="longestQuiet">Longest Quiet</div>
         <div class="flex gap-6">
@@ -108,7 +108,7 @@
           </div>
         </div>
       </div>
-      <div class="border-l border-gray-700 pl-8">
+      <div class="border-t sm:border-t-0 sm:border-l border-gray-700 pt-4 sm:pt-0 sm:pl-8">
         <div class="text-gray-400 text-sm font-semibold mb-2" data-i18n="quietestHour">Quietest Hours</div>
         <div class="flex gap-6">
           <div id="stat-quietest-3d" class="text-sm">

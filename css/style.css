@@ -75,6 +75,7 @@
   @apply absolute pointer-events-none bg-black/90 text-white text-xs leading-relaxed px-3 py-2 rounded hidden z-50 max-w-[250px];
 }
 
+
 /* RTL overrides */
 [dir="rtl"] .float-right {
   float: left;

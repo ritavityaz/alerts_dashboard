@@ -50,9 +50,17 @@ export function createHeatmap(container, timelineContainer) {
   const timelineLegend = timelineContainer.querySelector("div");
   const legendHeight = timelineLegend ? timelineLegend.offsetHeight : 0;
 
-  if (legendHeight > 0) {
-    d3.select(container).append("div").style("height", `${legendHeight}px`);
-  }
+  const header = d3.select(container).append("div")
+    .style("height", legendHeight > 0 ? `${legendHeight}px` : "auto")
+    .style("display", "flex")
+    .style("align-items", "center")
+    .style("justify-content", "center")
+    .style("padding", "0 4px");
+  const titleEl = header.append("span")
+    .style("font-size", "10px")
+    .style("color", "#64748b")
+    .style("white-space", "nowrap")
+    .text(t("alertHeatmap"));
 
   const margin = { top: TIMELINE_MARGIN.top, right: 8, bottom: TIMELINE_MARGIN.bottom, left: 8 };
   const height = TIMELINE_HEIGHT;
@@ -84,8 +92,6 @@ export function createHeatmap(container, timelineContainer) {
 
   // Data groups per column
   const colGroups = COLS.map((_, i) => svg.append("g").attr("transform", `translate(${colX(i)},0)`));
-  const overlayGroup = svg.append("g");
-
   const tooltip = document.getElementById("tooltip");
 
   function update(data) {
@@ -119,43 +125,12 @@ export function createHeatmap(container, timelineContainer) {
     });
   }
 
-  function setQuietestOverlay(quietData) {
-    // quietData: { "3d": { startH, startM, endH, endM, minutes } | null, ... }
-    overlayGroup.selectAll("*").remove();
-    COLS.forEach((col, i) => {
-      const q = quietData[col.key];
-      if (!q) return;
-      const startHour = q.startH + q.startM / 60;
-      const endHour = q.endH + q.endM / 60;
-      const wraps = endHour <= startHour;
-      const xPos = colX(i);
-
-      function drawRect(h0, h1) {
-        overlayGroup.append("rect")
-          .attr("x", xPos)
-          .attr("width", COL_WIDTH)
-          .attr("y", yScale(h0))
-          .attr("height", Math.max(1, yScale(h1) - yScale(h0)))
-          .attr("fill", "#22c55e").attr("fill-opacity", 0.2)
-          .attr("stroke", "#22c55e").attr("stroke-opacity", 0.5)
-          .attr("stroke-width", 1).attr("rx", 1)
-          .attr("pointer-events", "none");
-      }
-
-      if (wraps) {
-        drawRect(startHour, 24);
-        drawRect(0, endHour);
-      } else {
-        drawRect(startHour, endHour);
-      }
-    });
-  }
-
   function updateLabels() {
+    titleEl.text(t("alertHeatmap"));
     COLS.forEach((col, i) => {
       labels[i].text(t(col.i18n));
     });
   }
 
-  return { update, updateLabels, setQuietestOverlay };
+  return { update, updateLabels };
 }

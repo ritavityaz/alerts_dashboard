@@ -480,21 +480,12 @@ async function init() {
     qhAllEl.dataset.toDay = +todayStart;
 
     // Alert heatmap (weighted by recency, excludes today)
-    heatmapChart.update({
+    heatmapChart?.update({
       "3d": { events: quietEvents, from: threeDaysAgo, to: todayStart },
       "7d": { events: quietEvents, from: sevenDaysAgo, to: todayStart },
       "all": { events: quietEvents, from: minDate, to: todayStart },
     });
-    function qhOverlay(qh) {
-      if (!qh) return null;
-      const endMin = (qh.startH * 60 + qh.startM + qh.minutes) % 1440;
-      return { startH: qh.startH, startM: qh.startM, endH: Math.floor(endMin / 60), endM: endMin % 60, minutes: qh.minutes };
-    }
-    heatmapChart.setQuietestOverlay({
-      "3d": qhOverlay(qh3d),
-      "7d": qhOverlay(qh7d),
-      "all": qhOverlay(qhAll),
-    });
+
 
     if (!_skipTimeline) {
       updateTimelineFilter();
@@ -606,7 +597,10 @@ async function init() {
 
   const timelineEl = document.getElementById("timeline-container");
   const { update: updateTimeline, updateLegendLabels, highlightGap, highlightHourRange } = createTimeline(timelineEl, matched);
-  const heatmapChart = createHeatmap(document.getElementById("heatmap-container"), timelineEl);
+  const heatmapEl = document.getElementById("heatmap-container");
+  const isMobile = window.innerWidth < 640;
+  if (isMobile) heatmapEl.style.display = "none";
+  const heatmapChart = isMobile ? null : createHeatmap(heatmapEl, timelineEl);
   const timelineTitle = document.getElementById("timeline-title");
 
   // Quiet period & quietest hour click-to-highlight
@@ -759,7 +753,7 @@ async function init() {
 
     // Update timeline legend & heatmap labels
     updateLegendLabels();
-    heatmapChart.updateLabels();
+    heatmapChart?.updateLabels();
 
     // Refresh all dynamic text
     applyFilters();

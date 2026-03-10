@@ -257,7 +257,10 @@ async function init() {
       .filter((d) => d._start <= to && +(d._end || d._start) >= +from)
       .map((d) => [+d._start, +(d._end || d._start)])
       .sort((a, b) => a[0] - b[0]);
-    if (intervals.length === 0) return { ms: 0, start: null, end: null };
+    if (intervals.length === 0) {
+      if (fromFirstAlert) return { ms: 0, start: null, end: null };
+      return { ms: +to - +from, start: +from, end: +to };
+    }
     // Merge overlapping intervals to find covered periods
     const merged = [intervals[0].slice()];
     for (let i = 1; i < intervals.length; i++) {
@@ -362,7 +365,10 @@ async function init() {
     statInfiltration.textContent = fmt(byCat.get("10") || 0);
 
     // Longest quiet periods (using minute-resolution timeline events)
-    const now = new Date();
+    // Data timestamps are Israeli local times stored as-if-local (no TZ suffix),
+    // so we need "now" and "today midnight" in the same frame of reference.
+    // Convert real now → Israeli local time, then use d3.timeDay for midnight.
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Jerusalem" }));
     const todayStart = d3.timeDay(now);
     const threeDaysAgo = d3.timeDay.offset(todayStart, -3);
     let quietEvents = matched;

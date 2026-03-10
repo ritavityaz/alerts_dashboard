@@ -9,7 +9,7 @@ function renderLegend(maxCount) {
   const w = canvas.width;
   const h = canvas.height;
 
-  const colorScale = d3.scaleSequentialLog(d3.interpolateInferno).domain([1, maxCount]);
+  const colorScale = d3.scaleSequentialLog(d3.interpolateYlOrRd).domain([1, maxCount]);
   for (let x = 0; x < w; x++) {
     const val = Math.pow(maxCount, x / w);
     ctx.fillStyle = colorScale(Math.max(1, val));
@@ -22,7 +22,7 @@ function renderLegend(maxCount) {
 
 function applyColors(geojson, countByZone, fixedMax) {
   const maxCount = fixedMax || d3.max([...countByZone.values()]) || 1;
-  const colorScale = d3.scaleSequentialLog(d3.interpolateInferno).domain([1, maxCount]);
+  const colorScale = d3.scaleSequentialLog(d3.interpolateYlOrRd).domain([1, maxCount]);
 
   for (const f of geojson.features) {
     const count = countByZone.get(f.properties.name_he) || 0;

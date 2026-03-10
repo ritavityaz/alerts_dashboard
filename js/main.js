@@ -297,6 +297,8 @@ async function init() {
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
   }
 
+  const categoryToThreat = { "1": "missiles", "2": "drones", "10": "terrorists" };
+
   let _skipTimeline = false;
   function applyFilters() {
     const threat = threatSelect.value;
@@ -364,6 +366,7 @@ async function init() {
     const todayStart = d3.timeDay(now);
     const threeDaysAgo = d3.timeDay.offset(todayStart, -3);
     let quietEvents = matched;
+    if (threat !== "all") quietEvents = quietEvents.filter((d) => d.threat_type === categoryToThreat[threat]);
     if (currentCtx === "zone" && zone !== "all") {
       quietEvents = quietEvents.filter((d) => cityToZone.get(d.data) === zone);
     } else if (currentCtx === "city" && selectedCityHe) {
@@ -513,8 +516,7 @@ async function init() {
     });
   }
 
-  // Map category codes to threat_type for timeline filtering
-  const categoryToThreat = { "1": "missiles", "2": "drones", "10": "terrorists" };
+  // Map category codes for timeline filtering
   const threatLabelKeys = { "1": "missilePrefix", "2": "dronePrefix", "10": "infiltrationPrefix" };
 
   function updateTimelineFilter() {

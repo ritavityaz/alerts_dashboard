@@ -1,6 +1,7 @@
 import * as d3 from "d3";
 import { createMap } from "./map.js";
 import { createTimeline } from "./timeline.js";
+import { createHeatmap } from "./heatmap.js";
 import { lang, setLang, t } from "./i18n.js";
 
 const DATA_URL = import.meta.env.VITE_DATA_URL || "";
@@ -76,8 +77,15 @@ async function init() {
   const statInfiltration = document.querySelector("#stat-infiltration .font-bold");
   const statQuietToday = document.querySelector("#stat-quiet-today .font-bold");
   const statQuiet3d = document.querySelector("#stat-quiet-3d .font-bold");
+  const statQuiet7d = document.querySelector("#stat-quiet-7d .font-bold");
   const statQuietAll = document.querySelector("#stat-quiet-all .font-bold");
-  const quietRows = [statQuietToday.parentElement, statQuiet3d.parentElement, statQuietAll.parentElement];
+  const quietRows = [statQuietToday.parentElement, statQuiet3d.parentElement, statQuiet7d.parentElement, statQuietAll.parentElement];
+  const statQuietest3dRange = document.querySelector('#stat-quietest-3d [data-field="range"]');
+  const statQuietest3dDur = document.querySelector('#stat-quietest-3d [data-field="dur"]');
+  const statQuietest7dRange = document.querySelector('#stat-quietest-7d [data-field="range"]');
+  const statQuietest7dDur = document.querySelector('#stat-quietest-7d [data-field="dur"]');
+  const statQuietestAllRange = document.querySelector('#stat-quietest-all [data-field="range"]');
+  const statQuietestAllDur = document.querySelector('#stat-quietest-all [data-field="dur"]');
   const dayFmt = d3.timeFormat("%b %d");
 
   // Create map
@@ -300,6 +308,52 @@ async function init() {
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
   }
 
+  function quietestHour(eventsArr, from, to) {
+    // Project all alerts onto a single 24h window [0..1440) in minutes, merge, find longest gap
+    const MINS = 1440;
+    const covered = new Uint8Array(MINS); // 1 = alert active in this minute
+    for (const d of eventsArr) {
+      const s = +d._start, e = +(d._end || d._start);
+      if (s > +to || e < +from) continue;
+      // Clamp to [from, to]
+      const cs = Math.max(s, +from), ce = Math.min(e, +to);
+      // Project onto 24h: use hour/minute of start and end
+      const sDate = new Date(cs), eDate = new Date(ce);
+      let sm = sDate.getHours() * 60 + sDate.getMinutes();
+      let em = eDate.getHours() * 60 + eDate.getMinutes();
+      // If event spans within one day or we just mark its time-of-day footprint
+      if (em <= sm) em = sm + 1; // at minimum, mark 1 minute
+      for (let m = sm; m < Math.min(em, MINS); m++) covered[m] = 1;
+    }
+    // Find longest uncovered stretch (wrapping around midnight)
+    // Double the array to handle wrap-around
+    let maxLen = 0, bestStart = 0;
+    let run = 0, runStart = 0;
+    for (let i = 0; i < MINS * 2; i++) {
+      if (covered[i % MINS] === 0) {
+        if (run === 0) runStart = i % MINS;
+        run++;
+        if (run > maxLen && run <= MINS) { maxLen = run; bestStart = runStart; }
+      } else {
+        run = 0;
+      }
+    }
+    if (maxLen === 0) return null;
+    const sh = Math.floor(bestStart / 60), sm = bestStart % 60;
+    const endMin = (bestStart + maxLen) % MINS;
+    const eh = Math.floor(endMin / 60), em = endMin % 60;
+    return { startH: sh, startM: sm, endH: eh, endM: em, minutes: maxLen };
+  }
+
+  function fmtTimeRange(q) {
+    if (!q) return { range: "—", dur: "" };
+    const pad = (n) => String(n).padStart(2, "0");
+    const h = Math.floor(q.minutes / 60), m = q.minutes % 60;
+    const dur = h > 0 ? `${h}h${m > 0 ? ` ${m}m` : ""}` : `${m}m`;
+    return { range: `${pad(q.startH)}:${pad(q.startM)}–${pad(q.endH)}:${pad(q.endM)}`, dur };
+  }
+
+
   const categoryToThreat = { "1": "missiles", "2": "drones", "10": "terrorists" };
 
   let _skipTimeline = false;
@@ -371,6 +425,7 @@ async function init() {
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Jerusalem" }));
     const todayStart = d3.timeDay(now);
     const threeDaysAgo = d3.timeDay.offset(todayStart, -3);
+    const sevenDaysAgo = d3.timeDay.offset(todayStart, -7);
     let quietEvents = matched;
     if (threat !== "all") quietEvents = quietEvents.filter((d) => d.threat_type === categoryToThreat[threat]);
     if (currentCtx === "zone" && zone !== "all") {
@@ -380,21 +435,70 @@ async function init() {
     }
     const gapToday = longestGap(quietEvents, todayStart, now);
     const gap3d = longestGap(quietEvents, threeDaysAgo, now);
+    const gap7d = longestGap(quietEvents, sevenDaysAgo, now);
     const gapAll = longestGap(quietEvents, minDate, now, { fromFirstAlert: true });
     statQuietToday.textContent = fmtDuration(gapToday.ms);
     statQuiet3d.textContent = fmtDuration(gap3d.ms);
+    statQuiet7d.textContent = fmtDuration(gap7d.ms);
     statQuietAll.textContent = fmtDuration(gapAll.ms);
     statQuietToday.parentElement.dataset.gapStart = gapToday.start;
     statQuietToday.parentElement.dataset.gapEnd = gapToday.end;
     statQuiet3d.parentElement.dataset.gapStart = gap3d.start;
     statQuiet3d.parentElement.dataset.gapEnd = gap3d.end;
+    statQuiet7d.parentElement.dataset.gapStart = gap7d.start;
+    statQuiet7d.parentElement.dataset.gapEnd = gap7d.end;
     statQuietAll.parentElement.dataset.gapStart = gapAll.start;
     statQuietAll.parentElement.dataset.gapEnd = gapAll.end;
 
+    // Quietest hour (overlay projection onto 24h, excludes today's partial data)
+    const qh3d = quietestHour(quietEvents, threeDaysAgo, todayStart);
+    const qh7d = quietestHour(quietEvents, sevenDaysAgo, todayStart);
+    const qhAll = quietestHour(quietEvents, minDate, todayStart);
+    const fmt3d = fmtTimeRange(qh3d);
+    statQuietest3dRange.textContent = fmt3d.range;
+    statQuietest3dDur.textContent = fmt3d.dur;
+    const fmt7d = fmtTimeRange(qh7d);
+    statQuietest7dRange.textContent = fmt7d.range;
+    statQuietest7dDur.textContent = fmt7d.dur;
+    const fmtAllQ = fmtTimeRange(qhAll);
+    statQuietestAllRange.textContent = fmtAllQ.range;
+    statQuietestAllDur.textContent = fmtAllQ.dur;
+    const qh3dEl = document.getElementById("stat-quietest-3d");
+    const qh7dEl = document.getElementById("stat-quietest-7d");
+    const qhAllEl = document.getElementById("stat-quietest-all");
+    qh3dEl.dataset.startMin = qh3d ? qh3d.startH * 60 + qh3d.startM : "";
+    qh3dEl.dataset.endMin = qh3d ? (qh3d.startH * 60 + qh3d.startM + qh3d.minutes) % 1440 : "";
+    qh3dEl.dataset.fromDay = +threeDaysAgo;
+    qh3dEl.dataset.toDay = +todayStart;
+    qh7dEl.dataset.startMin = qh7d ? qh7d.startH * 60 + qh7d.startM : "";
+    qh7dEl.dataset.endMin = qh7d ? (qh7d.startH * 60 + qh7d.startM + qh7d.minutes) % 1440 : "";
+    qh7dEl.dataset.fromDay = +sevenDaysAgo;
+    qh7dEl.dataset.toDay = +todayStart;
+    qhAllEl.dataset.startMin = qhAll ? qhAll.startH * 60 + qhAll.startM : "";
+    qhAllEl.dataset.endMin = qhAll ? (qhAll.startH * 60 + qhAll.startM + qhAll.minutes) % 1440 : "";
+    qhAllEl.dataset.fromDay = +minDate;
+    qhAllEl.dataset.toDay = +todayStart;
+
+    // Alert heatmap (weighted by recency, excludes today)
+    heatmapChart.update({
+      "3d": { events: quietEvents, from: threeDaysAgo, to: todayStart },
+      "7d": { events: quietEvents, from: sevenDaysAgo, to: todayStart },
+      "all": { events: quietEvents, from: minDate, to: todayStart },
+    });
+    function qhOverlay(qh) {
+      if (!qh) return null;
+      const endMin = (qh.startH * 60 + qh.startM + qh.minutes) % 1440;
+      return { startH: qh.startH, startM: qh.startM, endH: Math.floor(endMin / 60), endM: endMin % 60, minutes: qh.minutes };
+    }
+    heatmapChart.setQuietestOverlay({
+      "3d": qhOverlay(qh3d),
+      "7d": qhOverlay(qh7d),
+      "all": qhOverlay(qhAll),
+    });
+
     if (!_skipTimeline) {
       updateTimelineFilter();
-      highlightGap(null, null);
-      for (const row of quietRows) row.classList.remove("bg-emerald-900/40", "ring-1", "ring-emerald-500/30");
+      clearAllHighlights();
     }
     updateResetVisibility();
   }
@@ -483,8 +587,8 @@ async function init() {
     zoomToZone("all");
   });
 
-  // Initial stats (wait for map sources to be ready)
-  ready.then(() => applyFilters());
+  // Initial stats (wait for map sources to be ready), then select Today
+  ready.then(() => { applyFilters(); quietRows[0].click(); });
 
   // Hydrate timeline events from compact format
   const threatTypes = ["missiles", "drones", "terrorists"];
@@ -500,24 +604,47 @@ async function init() {
     matched.push({ data, threat_type, _start, _end, NAME_HE, NAME_EN });
   }
 
-  const { update: updateTimeline, updateLegendLabels, highlightGap } = createTimeline(document.getElementById("timeline-container"), matched);
+  const timelineEl = document.getElementById("timeline-container");
+  const { update: updateTimeline, updateLegendLabels, highlightGap, highlightHourRange } = createTimeline(timelineEl, matched);
+  const heatmapChart = createHeatmap(document.getElementById("heatmap-container"), timelineEl);
   const timelineTitle = document.getElementById("timeline-title");
 
-  // Quiet period click-to-highlight
+  // Quiet period & quietest hour click-to-highlight
+  const quietestRows = [document.getElementById("stat-quietest-3d"), document.getElementById("stat-quietest-7d"), document.getElementById("stat-quietest-all")];
+  const allHighlightRows = [...quietRows, ...quietestRows];
+  const activeClass = ["bg-emerald-900/40", "ring-1", "ring-emerald-500/30"];
+
+  function clearAllHighlights() {
+    for (const row of allHighlightRows) row.classList.remove(...activeClass);
+    highlightGap(null, null);
+  }
+
   for (const el of quietRows) {
-    el.classList.add("cursor-pointer", "rounded", "px-1", "-mx-1", "transition-colors");
+    el.classList.add("cursor-pointer", "rounded", "px-1", "-mx-1", "transition-colors", "hover:bg-gray-800");
     el.addEventListener("click", () => {
       const s = +el.dataset.gapStart;
       const e = +el.dataset.gapEnd;
       if (!s || !e) return;
-      // Toggle: click again to deselect
-      const wasActive = el.classList.contains("bg-emerald-900/40");
-      for (const row of quietRows) row.classList.remove("bg-emerald-900/40", "ring-1", "ring-emerald-500/30");
-      if (wasActive) {
-        highlightGap(null, null);
-      } else {
-        el.classList.add("bg-emerald-900/40", "ring-1", "ring-emerald-500/30");
+      const wasActive = el.classList.contains(activeClass[0]);
+      clearAllHighlights();
+      if (!wasActive) {
+        el.classList.add(...activeClass);
         highlightGap(s, e);
+      }
+    });
+  }
+
+  for (const el of quietestRows) {
+    el.classList.add("cursor-pointer", "rounded", "px-1", "-mx-1", "transition-colors", "hover:bg-gray-800");
+    el.addEventListener("click", () => {
+      const sm = el.dataset.startMin;
+      const em = el.dataset.endMin;
+      if (sm === "" || em === "") return;
+      const wasActive = el.classList.contains(activeClass[0]);
+      clearAllHighlights();
+      if (!wasActive) {
+        el.classList.add(...activeClass);
+        highlightHourRange(+sm, +em, new Date(+el.dataset.fromDay), new Date(+el.dataset.toDay));
       }
     });
   }
@@ -630,8 +757,9 @@ async function init() {
     // Update subtitle
     subtitle.textContent = `${fmt(alerts.length)} ${t("totalSuffix")}`;
 
-    // Update timeline legend
+    // Update timeline legend & heatmap labels
     updateLegendLabels();
+    heatmapChart.updateLabels();
 
     // Refresh all dynamic text
     applyFilters();

@@ -217,5 +217,46 @@ export function createTimeline(container, allAlerts) {
     }
   }
 
-  return { update, updateLegendLabels, highlightGap };
+  function highlightHourRange(startMin, endMin, fromDay, toDay) {
+    highlightGroup.selectAll("*").remove();
+    if (startMin == null || endMin == null) return;
+    const hourFrom = startMin / 60;
+    const hourTo = endMin / 60;
+    // Handle wrap-around (e.g. 23:00–02:00)
+    const wraps = hourTo <= hourFrom;
+
+    for (const day of days) {
+      if (+day < +fromDay || +day >= +toDay) continue;
+      const colX = x(day);
+      if (colX == null) continue;
+
+      if (wraps) {
+        // Draw two rects: startMin→24:00 and 00:00→endMin
+        highlightGroup.append("rect")
+          .attr("x", colX).attr("width", x.bandwidth())
+          .attr("y", y(hourFrom))
+          .attr("height", Math.max(1, y(24) - y(hourFrom)))
+          .attr("fill", "#22c55e").attr("fill-opacity", 0.15)
+          .attr("stroke", "#22c55e").attr("stroke-opacity", 0.4)
+          .attr("stroke-width", 0.5).attr("rx", 1);
+        highlightGroup.append("rect")
+          .attr("x", colX).attr("width", x.bandwidth())
+          .attr("y", y(0))
+          .attr("height", Math.max(1, y(hourTo) - y(0)))
+          .attr("fill", "#22c55e").attr("fill-opacity", 0.15)
+          .attr("stroke", "#22c55e").attr("stroke-opacity", 0.4)
+          .attr("stroke-width", 0.5).attr("rx", 1);
+      } else {
+        highlightGroup.append("rect")
+          .attr("x", colX).attr("width", x.bandwidth())
+          .attr("y", y(hourFrom))
+          .attr("height", Math.max(1, y(hourTo) - y(hourFrom)))
+          .attr("fill", "#22c55e").attr("fill-opacity", 0.15)
+          .attr("stroke", "#22c55e").attr("stroke-opacity", 0.4)
+          .attr("stroke-width", 0.5).attr("rx", 1);
+      }
+    }
+  }
+
+  return { update, updateLegendLabels, highlightGap, highlightHourRange };
 }

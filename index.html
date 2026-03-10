@@ -83,11 +83,51 @@
     <h2 id="timeline-title" class="text-lg font-bold mt-8 mb-3" data-i18n="alertTimeline">Alert Timeline</h2>
     <div class="flex gap-3">
       <div id="timeline-container" class="bg-gray-900 border border-gray-800 rounded-lg overflow-x-auto flex-1 min-w-0"></div>
-      <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 w-48 shrink-0">
-        <div class="text-gray-500 text-xs mb-1" data-i18n="longestQuiet">Longest Quiet</div>
-        <div id="stat-quiet-today" class="text-sm"><span class="text-gray-400" data-i18n="today">Today</span> <span class="font-bold float-right">—</span></div>
-        <div id="stat-quiet-3d" class="text-sm"><span class="text-gray-400" data-i18n="past3days">3 days</span> <span class="font-bold float-right">—</span></div>
-        <div id="stat-quiet-all" class="text-sm"><span class="text-gray-400" data-i18n="sinceStart">All time</span> <span class="font-bold float-right">—</span></div>
+      <div id="heatmap-container" class="bg-gray-900 border border-gray-800 rounded-lg shrink-0"></div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 mt-3">
+      <div class="flex gap-8">
+      <div>
+        <div class="text-gray-400 text-sm font-semibold mb-2" data-i18n="longestQuiet">Longest Quiet</div>
+        <div class="flex gap-6">
+          <div id="stat-quiet-today" class="text-sm">
+            <div class="text-gray-500 text-xs" data-i18n="today">Today</div>
+            <div class="font-bold">—</div>
+          </div>
+          <div id="stat-quiet-3d" class="text-sm">
+            <div class="text-gray-500 text-xs" data-i18n="past3days">3 days</div>
+            <div class="font-bold">—</div>
+          </div>
+          <div id="stat-quiet-7d" class="text-sm">
+            <div class="text-gray-500 text-xs" data-i18n="past7days">7 days</div>
+            <div class="font-bold">—</div>
+          </div>
+          <div id="stat-quiet-all" class="text-sm">
+            <div class="text-gray-500 text-xs" data-i18n="sinceStart">All time</div>
+            <div class="font-bold">—</div>
+          </div>
+        </div>
+      </div>
+      <div class="border-l border-gray-700 pl-8">
+        <div class="text-gray-400 text-sm font-semibold mb-2" data-i18n="quietestHour">Quietest Hours</div>
+        <div class="flex gap-6">
+          <div id="stat-quietest-3d" class="text-sm">
+            <div class="text-gray-500 text-xs" data-i18n="past3days">3 days</div>
+            <div class="font-bold" data-field="range">—</div>
+            <div class="text-gray-500 text-xs" data-field="dur"></div>
+          </div>
+          <div id="stat-quietest-7d" class="text-sm">
+            <div class="text-gray-500 text-xs" data-i18n="past7days">7 days</div>
+            <div class="font-bold" data-field="range">—</div>
+            <div class="text-gray-500 text-xs" data-field="dur"></div>
+          </div>
+          <div id="stat-quietest-all" class="text-sm">
+            <div class="text-gray-500 text-xs" data-i18n="sinceStart">All time</div>
+            <div class="font-bold" data-field="range">—</div>
+            <div class="text-gray-500 text-xs" data-field="dur"></div>
+          </div>
+        </div>
+      </div>
       </div>
     </div>
   </main>

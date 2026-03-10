@@ -28,8 +28,11 @@ const translations = {
     alertTimeline: "Alert Timeline",
     reset: "Reset",
     longestQuiet: "Longest Quiet",
+    quietestHour: "Quietest Hours",
+    alertHeatmap: "Alert Heatmap",
     today: "Today",
     past3days: "3 days",
+    past7days: "7 days",
     sinceStart: "All time",
   },
   he: {
@@ -61,8 +64,11 @@ const translations = {
     alertTimeline: "ציר זמן התרעות",
     reset: "איפוס",
     longestQuiet: "השקט הארוך ביותר",
+    quietestHour: "השעות השקטות ביותר",
+    alertHeatmap: "מפת חום התרעות",
     today: "היום",
     past3days: "3 ימים",
+    past7days: "7 ימים",
     sinceStart: "מתחילת המלחמה",
   },
 };

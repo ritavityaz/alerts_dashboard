@@ -56,9 +56,28 @@
       <span data-i18n="alerts">alerts</span>
     </div>
     <div id="map-section"></div>
-    <div id="map-stats-row" class="flex flex-col sm:flex-row gap-3">
-      <div id="map-container" class="bg-gray-900 border border-gray-800 rounded-lg sm:flex-1 min-w-0"></div>
-      <div id="stats-panel" class="flex flex-row flex-wrap sm:flex-col sm:flex-nowrap gap-3 w-full sm:w-48 sm:shrink-0">
+    <div id="map-stats-row" class="flex flex-col sm:flex-row sm:flex-wrap gap-3">
+      <div id="map-container" class="bg-gray-900 border border-gray-800 rounded-lg sm:flex-1 min-w-0 order-1"></div>
+      <div id="slider-section" class="order-2 sm:order-3 sm:w-full">
+        <div id="sparkline" class="w-full" style="height:40px"></div>
+        <div class="range-slider">
+          <input type="range" id="range-min" min="0" max="100" value="0">
+          <input type="range" id="range-max" min="0" max="100" value="100">
+          <div class="range-track"></div>
+          <div id="range-highlight" class="range-highlight"></div>
+        </div>
+        <div class="flex items-center text-xs text-gray-400 mt-1">
+          <span id="slider-start"></span>
+          <div class="flex-1 flex justify-center gap-1">
+            <button id="step-prev-hr" class="px-3 py-2 sm:px-1.5 sm:py-0.5 rounded border border-gray-700 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white cursor-pointer text-sm sm:text-[10px]" aria-label="Previous hour">&laquo;</button>
+            <button id="step-prev" class="px-3 py-2 sm:px-1.5 sm:py-0.5 rounded border border-gray-700 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white cursor-pointer text-sm sm:text-xs" aria-label="Previous day">&larr;</button>
+            <button id="step-next" class="px-3 py-2 sm:px-1.5 sm:py-0.5 rounded border border-gray-700 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white cursor-pointer text-sm sm:text-xs" aria-label="Next day">&rarr;</button>
+            <button id="step-next-hr" class="px-3 py-2 sm:px-1.5 sm:py-0.5 rounded border border-gray-700 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white cursor-pointer text-sm sm:text-[10px]" aria-label="Next hour">&raquo;</button>
+          </div>
+          <span id="slider-end"></span>
+        </div>
+      </div>
+      <div id="stats-panel" class="flex flex-row flex-wrap sm:flex-col sm:flex-nowrap gap-3 w-full sm:w-48 sm:shrink-0 order-3 sm:order-2">
         <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 flex-1 basis-[calc(50%-0.375rem)] sm:basis-auto">
           <div class="text-gray-500 text-xs mb-1" data-i18n="totalAlerts">Total Alerts</div>
           <div id="stat-total" class="text-2xl font-bold">0</div>
@@ -80,25 +99,6 @@
         </div>
       </div>
     </div>
-    <div id="slider-section" class="mt-3">
-      <div id="sparkline" class="w-full" style="height:40px"></div>
-      <div class="range-slider">
-        <input type="range" id="range-min" min="0" max="100" value="0">
-        <input type="range" id="range-max" min="0" max="100" value="100">
-        <div class="range-track"></div>
-        <div id="range-highlight" class="range-highlight"></div>
-      </div>
-      <div class="flex items-center text-xs text-gray-400 mt-1">
-        <span id="slider-start"></span>
-        <div class="flex-1 flex justify-center gap-1">
-          <button id="step-prev-hr" class="px-1.5 py-0.5 rounded border border-gray-700 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white cursor-pointer text-[10px]" aria-label="Previous hour">&laquo;</button>
-          <button id="step-prev" class="px-1.5 py-0.5 rounded border border-gray-700 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white cursor-pointer" aria-label="Previous day">&larr;</button>
-          <button id="step-next" class="px-1.5 py-0.5 rounded border border-gray-700 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white cursor-pointer" aria-label="Next day">&rarr;</button>
-          <button id="step-next-hr" class="px-1.5 py-0.5 rounded border border-gray-700 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white cursor-pointer text-[10px]" aria-label="Next hour">&raquo;</button>
-        </div>
-        <span id="slider-end"></span>
-      </div>
-    </div>
 
     <div id="timeline-section"></div>
     <h2 id="timeline-title" class="text-lg font-bold mt-8 mb-3" data-i18n="alertTimeline">Alert Timeline</h2>
@@ -113,19 +113,23 @@
         <div class="flex gap-6">
           <div id="stat-quiet-today" class="text-sm">
             <div class="text-gray-500 text-xs" data-i18n="today">Today</div>
-            <div class="font-bold">—</div>
+            <div class="font-bold" data-field="dur">—</div>
+            <div class="text-gray-500 text-xs" data-field="range"></div>
           </div>
           <div id="stat-quiet-3d" class="text-sm">
             <div class="text-gray-500 text-xs" data-i18n="past3days">3 days</div>
-            <div class="font-bold">—</div>
+            <div class="font-bold" data-field="dur">—</div>
+            <div class="text-gray-500 text-xs" data-field="range"></div>
           </div>
           <div id="stat-quiet-7d" class="text-sm">
             <div class="text-gray-500 text-xs" data-i18n="past7days">7 days</div>
-            <div class="font-bold">—</div>
+            <div class="font-bold" data-field="dur">—</div>
+            <div class="text-gray-500 text-xs" data-field="range"></div>
           </div>
           <div id="stat-quiet-all" class="text-sm">
             <div class="text-gray-500 text-xs" data-i18n="sinceStart">All time</div>
-            <div class="font-bold">—</div>
+            <div class="font-bold" data-field="dur">—</div>
+            <div class="text-gray-500 text-xs" data-field="range"></div>
           </div>
         </div>
       </div>

@@ -75,10 +75,14 @@ async function init() {
   const statMissiles = document.querySelector("#stat-missiles .font-bold");
   const statDrones = document.querySelector("#stat-drones .font-bold");
   const statInfiltration = document.querySelector("#stat-infiltration .font-bold");
-  const statQuietToday = document.querySelector("#stat-quiet-today .font-bold");
-  const statQuiet3d = document.querySelector("#stat-quiet-3d .font-bold");
-  const statQuiet7d = document.querySelector("#stat-quiet-7d .font-bold");
-  const statQuietAll = document.querySelector("#stat-quiet-all .font-bold");
+  const statQuietToday = document.querySelector('#stat-quiet-today [data-field="dur"]');
+  const statQuiet3d = document.querySelector('#stat-quiet-3d [data-field="dur"]');
+  const statQuiet7d = document.querySelector('#stat-quiet-7d [data-field="dur"]');
+  const statQuietAll = document.querySelector('#stat-quiet-all [data-field="dur"]');
+  const statQuietTodayRange = document.querySelector('#stat-quiet-today [data-field="range"]');
+  const statQuiet3dRange = document.querySelector('#stat-quiet-3d [data-field="range"]');
+  const statQuiet7dRange = document.querySelector('#stat-quiet-7d [data-field="range"]');
+  const statQuietAllRange = document.querySelector('#stat-quiet-all [data-field="range"]');
   const quietRows = [statQuietToday.parentElement, statQuiet3d.parentElement, statQuiet7d.parentElement, statQuietAll.parentElement];
   const statQuietest3dRange = document.querySelector('#stat-quietest-3d [data-field="range"]');
   const statQuietest3dDur = document.querySelector('#stat-quietest-3d [data-field="dur"]');
@@ -414,6 +418,16 @@ async function init() {
     return { startH: sh, startM: sm, endH: eh, endM: em, minutes: maxLen };
   }
 
+  const gapTimeFmt = d3.timeFormat("%H:%M");
+  const gapDateFmt = d3.timeFormat("%-d/%m %H:%M");
+  function fmtGapRange(gap) {
+    if (!gap || !gap.ms) return "";
+    const s = new Date(gap.start), e = new Date(gap.end);
+    const sameDay = d3.timeDay(s).getTime() === d3.timeDay(e).getTime();
+    if (sameDay) return `${gapTimeFmt(s)}–${gapTimeFmt(e)}`;
+    return `${gapDateFmt(s)}–${gapDateFmt(e)}`;
+  }
+
   function fmtTimeRange(q) {
     if (!q) return { range: "—", dur: "" };
     const pad = (n) => String(n).padStart(2, "0");
@@ -510,6 +524,10 @@ async function init() {
     statQuiet3d.textContent = fmtDuration(gap3d.ms);
     statQuiet7d.textContent = fmtDuration(gap7d.ms);
     statQuietAll.textContent = fmtDuration(gapAll.ms);
+    statQuietTodayRange.textContent = fmtGapRange(gapToday);
+    statQuiet3dRange.textContent = fmtGapRange(gap3d);
+    statQuiet7dRange.textContent = fmtGapRange(gap7d);
+    statQuietAllRange.textContent = fmtGapRange(gapAll);
     statQuietToday.parentElement.dataset.gapStart = gapToday.start;
     statQuietToday.parentElement.dataset.gapEnd = gapToday.end;
     statQuiet3d.parentElement.dataset.gapStart = gap3d.start;

@@ -85,10 +85,18 @@ html {
 
 
 /* Charts and slider should always be LTR to prevent RTL from flipping layout */
+#legend,
 #slider-section,
 #timeline-container,
 #heatmap-container {
   direction: ltr;
+}
+
+/* Time/duration values should always be LTR */
+#stats-section .font-bold,
+#stats-section [data-field] {
+  direction: ltr;
+  text-align: start;
 }
 
 /* RTL overrides */

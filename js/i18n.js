@@ -40,7 +40,7 @@ const translations = {
     sinceStart: "All time",
   },
   he: {
-    title: "מבצע אריה מנומנם",
+    title: "שינת הארי",
     allThreats: "כל האיומים",
     missiles: "ירי רקטות וטילים",
     drones: "חדירת כלי טיס עוין",

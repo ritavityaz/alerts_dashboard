@@ -38,7 +38,7 @@ function recolor(map, geojson, countByZone, fixedMax) {
   map.getSource("zones").setData(geojson);
 }
 
-export function createMap(container, geojson, countByZone) {
+export function createMap(container, geojson, countByZone, onCityClick) {
   const height = Math.min(container.clientWidth * 1.2, 600);
   container.style.height = `${height}px`;
 
@@ -91,6 +91,13 @@ export function createMap(container, geojson, countByZone) {
     map.on("mouseleave", "zone-fill", () => {
       map.getCanvas().style.cursor = "";
       tooltip.style.display = "none";
+    });
+
+    map.on("click", "zone-fill", (e) => {
+      const p = e.features[0].properties;
+      if (p.alertCount > 0 && onCityClick) {
+        onCityClick(p.name_he);
+      }
     });
 
     resolve();

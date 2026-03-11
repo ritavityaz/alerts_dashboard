@@ -90,7 +90,10 @@ async function init() {
 
   // Create map
   const countByZone = d3.rollup(alerts, (v) => v.length, (d) => d.data);
-  const { ready, recolor, zoomToZone, zoomToCity, highlightCity } = createMap(document.getElementById("map-container"), geojson, countByZone);
+  let onMapCityClick = null;
+  const { ready, recolor, zoomToZone, zoomToCity, highlightCity } = createMap(document.getElementById("map-container"), geojson, countByZone, (nameHe) => {
+    if (onMapCityClick) onMapCityClick(nameHe);
+  });
 
   // Sparkline area chart (alerts per day)
   const minDate = d3.min(alerts, (d) => d._ts);
@@ -548,6 +551,18 @@ async function init() {
     for (const btn of ctxBtns) btn.style.display = "";
     setCtx("city");
   });
+
+  // Map click → select city
+  onMapCityClick = (nameHe) => {
+    selectedCityHe = nameHe;
+    const nameEn = cityHeToEn.get(nameHe) || nameHe;
+    cityInput.value = lang === "he" ? nameHe : nameEn;
+    const zone = cityToZone.get(nameHe);
+    if (zone) zoneSelect.value = zone;
+    contextToggle.classList.remove("hidden");
+    for (const btn of ctxBtns) btn.style.display = "";
+    setCtx("city");
+  };
 
   // Reset button
   const resetBtn = document.getElementById("reset-filters");

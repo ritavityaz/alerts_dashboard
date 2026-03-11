@@ -1,6 +1,14 @@
 @import "tailwindcss";
 @import "maplibre-gl/dist/maplibre-gl.css";
 
+html {
+  scroll-behavior: smooth;
+}
+
+#map-section, #timeline-section, #stats-section {
+  scroll-margin-top: 4rem;
+}
+
 #map-container canvas {
   filter: brightness(1.4);
 }
@@ -82,8 +90,6 @@
 }
 
 [dir="rtl"] #lang-toggle {
-  right: auto;
-  left: 0;
   flex-direction: row-reverse;
 }
 

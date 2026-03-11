@@ -5,7 +5,7 @@ html {
   scroll-behavior: smooth;
 }
 
-#map-section, #timeline-section, #stats-section {
+#map-section, #timeline-section, #stats-section, #about-section {
   scroll-margin-top: 4rem;
 }
 

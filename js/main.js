@@ -211,8 +211,7 @@ async function init() {
 
   updateHighlight();
 
-  let sliderRaf = null;
-  function onSliderChange() {
+  function onSliderInput() {
     // Prevent crossing
     if (+rangeMin.value > +rangeMax.value) {
       rangeMin.value = rangeMax.value;
@@ -222,8 +221,10 @@ async function init() {
     startLabel.textContent = sliderDateLabel(startDate);
     endLabel.textContent = sliderDateLabel(endDate);
     updateHighlight();
-    if (sliderRaf) cancelAnimationFrame(sliderRaf);
-    sliderRaf = requestAnimationFrame(() => { sliderRaf = null; _skipTimeline = true; applyFilters(); _skipTimeline = false; });
+  }
+  function onSliderChange() {
+    onSliderInput();
+    _skipTimeline = true; applyFilters(); _skipTimeline = false;
   }
 
   // Context toggle
@@ -497,8 +498,10 @@ async function init() {
     updateResetVisibility();
   }
 
-  rangeMin.addEventListener("input", onSliderChange);
-  rangeMax.addEventListener("input", onSliderChange);
+  rangeMin.addEventListener("input", onSliderInput);
+  rangeMax.addEventListener("input", onSliderInput);
+  rangeMin.addEventListener("change", onSliderChange);
+  rangeMax.addEventListener("change", onSliderChange);
   rangeMin.addEventListener("change", updateTimelineFilter);
   rangeMax.addEventListener("change", updateTimelineFilter);
   threatSelect.addEventListener("change", applyFilters);

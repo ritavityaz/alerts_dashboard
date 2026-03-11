@@ -79,9 +79,9 @@ export function createHeatmap(container, timelineContainer) {
 
   function colX(i) { return margin.left + i * (COL_WIDTH + COL_GAP); }
 
-  // Column labels (top)
-  const labels = COLS.map((col, i) => {
-    return svg.append("text")
+  // Column labels (top) – keep short abbreviations in all languages
+  COLS.forEach((col, i) => {
+    svg.append("text")
       .attr("x", colX(i) + COL_WIDTH / 2)
       .attr("y", margin.top - 6)
       .attr("text-anchor", "middle")
@@ -127,9 +127,7 @@ export function createHeatmap(container, timelineContainer) {
 
   function updateLabels() {
     titleEl.text(t("alertHeatmap"));
-    COLS.forEach((col, i) => {
-      labels[i].text(t(col.i18n));
-    });
+    // Column labels stay as short abbreviations (3d/7d/all) in all languages
   }
 
   return { update, updateLabels };

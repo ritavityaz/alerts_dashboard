@@ -17,6 +17,7 @@ html {
 .range-slider {
   position: relative;
   height: 20px;
+  direction: ltr;
 }
 
 .range-slider input[type="range"] {
@@ -83,6 +84,12 @@ html {
   @apply absolute pointer-events-none bg-black/90 text-white text-xs leading-relaxed px-3 py-2 rounded hidden z-50 max-w-[250px];
 }
 
+
+/* Charts should always be LTR to prevent RTL from flipping overflow/layout */
+#timeline-container,
+#heatmap-container {
+  direction: ltr;
+}
 
 /* RTL overrides */
 [dir="rtl"] .float-right {

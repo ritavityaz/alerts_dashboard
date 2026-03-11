@@ -227,6 +227,71 @@ async function init() {
     _skipTimeline = true; applyFilters(); _skipTimeline = false;
   }
 
+  // Step buttons – flip through full days (midnight to midnight)
+  function dateToSlider(date) {
+    return Math.round((date - minDate) / 3600000);
+  }
+  function snapToDay(dir) {
+    const curStart = sliderToDate(+rangeMin.value);
+    const curEnd = sliderToDate(+rangeMax.value);
+    const isFullRange = +rangeMin.value === 0 && +rangeMax.value === totalHours;
+
+    let dayStart, dayEnd;
+    if (isFullRange) {
+      // First click: snap to first or last full day
+      if (dir === 1) {
+        dayStart = d3.timeDay(minDate);
+        dayEnd = d3.timeDay.offset(dayStart, 1);
+      } else {
+        dayEnd = d3.timeDay.ceil(maxDate);
+        dayStart = d3.timeDay.offset(dayEnd, -1);
+      }
+    } else {
+      // Shift current window by one day
+      dayStart = d3.timeDay.offset(d3.timeDay(curStart), dir);
+      dayEnd = d3.timeDay.offset(d3.timeDay(curEnd), dir);
+    }
+
+    let lo = dateToSlider(dayStart);
+    let hi = dateToSlider(dayEnd);
+    // Clamp to slider bounds
+    if (lo < 0) { lo = 0; hi = Math.min(24, totalHours); }
+    if (hi > totalHours) { hi = totalHours; lo = Math.max(hi - 24, 0); }
+    rangeMin.value = lo;
+    rangeMax.value = hi;
+    onSliderChange();
+    updateTimelineFilter();
+  }
+  document.getElementById("step-prev").addEventListener("click", () => snapToDay(-1));
+  document.getElementById("step-next").addEventListener("click", () => snapToDay(1));
+
+  // Hour step buttons
+  function stepHour(dir) {
+    const isFullRange = +rangeMin.value === 0 && +rangeMax.value === totalHours;
+    let span = +rangeMax.value - +rangeMin.value;
+    if (isFullRange) {
+      // Snap to first or last 1-hour window
+      if (dir === 1) {
+        rangeMin.value = 0;
+        rangeMax.value = Math.min(1, totalHours);
+      } else {
+        rangeMax.value = totalHours;
+        rangeMin.value = Math.max(totalHours - 1, 0);
+      }
+    } else {
+      let lo = +rangeMin.value + dir;
+      let hi = +rangeMax.value + dir;
+      if (lo < 0) { lo = 0; hi = Math.min(span, totalHours); }
+      if (hi > totalHours) { hi = totalHours; lo = Math.max(totalHours - span, 0); }
+      rangeMin.value = lo;
+      rangeMax.value = hi;
+    }
+    onSliderChange();
+    updateTimelineFilter();
+  }
+  document.getElementById("step-prev-hr").addEventListener("click", () => stepHour(-1));
+  document.getElementById("step-next-hr").addEventListener("click", () => stepHour(1));
+
   // Context toggle
   const contextToggle = document.getElementById("context-toggle");
   const ctxBtns = contextToggle.querySelectorAll("button");

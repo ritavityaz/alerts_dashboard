@@ -6,6 +6,17 @@ import { lang, setLang, t } from "./i18n.js";
 
 const DATA_URL = import.meta.env.VITE_DATA_URL || "";
 
+/**
+ * Convert a UTC Date to a "fake-local" Date whose local fields
+ * (.getHours(), .getDate(), etc.) show Israel time.
+ * This lets d3.timeFormat / d3.timeDay work in Israel time
+ * regardless of the browser's timezone.
+ */
+function toIL(utcDate) {
+  const ilStr = utcDate.toLocaleString("en-US", { timeZone: "Asia/Jerusalem" });
+  return new Date(ilStr);
+}
+
 async function init() {
   const [cube, geojson, eventsData] = await Promise.all([
     d3.json(`${DATA_URL}/optimized/alerts_cube.json`),
@@ -18,7 +29,7 @@ async function init() {
   const alerts = [];
   for (let i = 0; i < cube.c.length; i++) {
     const data = cube.cities[cube.c[i]];
-    const _ts = new Date(cube.hours[cube.h[i]] + ":00:00Z");
+    const _ts = toIL(new Date(cube.hours[cube.h[i]] + ":00:00Z"));
     const category = cats[cube.t[i]];
     const count = cube.n[i];
     for (let j = 0; j < count; j++) alerts.push({ data, _ts, category });
@@ -502,10 +513,7 @@ async function init() {
     statInfiltration.textContent = fmt(byCat.get("10") || 0);
 
     // Longest quiet periods (using minute-resolution timeline events)
-    // Data timestamps are Israeli local times stored as-if-local (no TZ suffix),
-    // so we need "now" and "today midnight" in the same frame of reference.
-    // Convert real now → Israeli local time, then use d3.timeDay for midnight.
-    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Jerusalem" }));
+    const now = toIL(new Date());
     const todayStart = d3.timeDay(now);
     const threeDaysAgo = d3.timeDay.offset(todayStart, -3);
     const sevenDaysAgo = d3.timeDay.offset(todayStart, -7);
@@ -689,8 +697,8 @@ async function init() {
   for (let i = 0; i < eventsData.c.length; i++) {
     const data = eventsData.cities[eventsData.c[i]];
     const threat_type = threatTypes[eventsData.t[i]];
-    const _start = new Date(eventsBase + eventsData.s[i] * 60000);
-    const _end = eventsData.r[i] != null ? new Date(eventsBase + eventsData.r[i] * 60000) : null;
+    const _start = toIL(new Date(eventsBase + eventsData.s[i] * 60000));
+    const _end = eventsData.r[i] != null ? toIL(new Date(eventsBase + eventsData.r[i] * 60000)) : null;
     const NAME_HE = data;
     const NAME_EN = cityHeToEn.get(data) || data;
     matched.push({ data, threat_type, _start, _end, NAME_HE, NAME_EN });

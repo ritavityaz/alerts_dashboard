@@ -7,7 +7,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦁</text></svg>">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.19.0/dist/maplibre-gl.css">
   <link rel="stylesheet" href="css/style.css">
-  <script src="https://unpkg.com/maplibre-gl@5.19.0/dist/maplibre-gl.js"></script>
+  <script defer src="https://unpkg.com/maplibre-gl@5.19.0/dist/maplibre-gl.js"></script>
 </head>
 <body class="bg-gray-950 text-gray-200 font-sans pb-8">
   <header class="sticky top-0 z-40 bg-gray-950/90 backdrop-blur-sm border-b border-gray-800">
@@ -59,7 +59,7 @@
     </div>
     <div id="map-section"></div>
     <div id="map-stats-row" class="flex flex-col sm:flex-row sm:flex-wrap gap-3">
-      <div id="map-container" class="bg-gray-900 border border-gray-800 rounded-lg sm:flex-1 min-w-0 order-1"></div>
+      <div id="map-container" class="bg-gray-900 border border-gray-800 rounded-lg sm:flex-1 min-w-0 order-1" style="min-height:400px"></div>
       <div id="slider-section" class="order-2 sm:order-3 sm:w-full">
         <div id="sparkline" class="w-full" style="height:40px"></div>
         <div class="range-slider">

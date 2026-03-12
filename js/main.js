@@ -3,6 +3,7 @@ import { createMap } from "./map.js";
 import { createTimeline } from "./timeline.js";
 import { createHeatmap } from "./heatmap.js";
 import { lang, setLang, t } from "./i18n.js";
+import { initDB, queryCountsByCity, queryGlobalMax, queryStats, querySparkline, queryFilteredEvents } from "./db.js";
 
 const DATA_URL = import.meta.env.VITE_DATA_URL || "";
 
@@ -18,24 +19,27 @@ function toIL(utcDate) {
 }
 
 async function init() {
-  const [cube, geojson, eventsData] = await Promise.all([
-    d3.json(`${DATA_URL}/optimized/alerts_cube.json`),
-    d3.json(`${DATA_URL}/optimized/zones.geojson`),
-    d3.json(`${DATA_URL}/optimized/timeline_events.json`),
-  ]);
+  // Start all fetches in parallel — snapshot is tiny and arrives first
+  const snapshotP = fetch(`${DATA_URL}/optimized/snapshot.json`).then((r) => r.json()).catch(() => null);
+  const alertsBufP = fetch(`${DATA_URL}/optimized/alerts.parquet`).then((r) => r.arrayBuffer());
+  const eventsBufP = fetch(`${DATA_URL}/optimized/events.parquet`).then((r) => r.arrayBuffer());
+  const geojsonP = d3.json(`${DATA_URL}/optimized/zones.geojson`);
 
-  // Hydrate alerts from compact cube format
-  const cats = ["1", "2", "10"];
-  const alerts = [];
-  for (let i = 0; i < cube.c.length; i++) {
-    const data = cube.cities[cube.c[i]];
-    const _ts = toIL(new Date(cube.hours[cube.h[i]] + ":00:00Z"));
-    const category = cats[cube.t[i]];
-    const count = cube.n[i];
-    for (let j = 0; j < count; j++) alerts.push({ data, _ts, category });
-  }
+  // Heavy path: start DuckDB init as soon as parquet arrives (runs in background)
+  const dbReadyP = Promise.all([alertsBufP, eventsBufP]).then(
+    ([alertsBuf, eventsBuf]) => initDB(alertsBuf, eventsBuf)
+  );
 
-  console.log(`Loaded ${alerts.length} alerts, ${geojson.features.length} zones`);
+  // Fast path: wait only for snapshot + geojson (small files)
+  const [snapshot, geojson] = await Promise.all([snapshotP, geojsonP]);
+
+  const totalAlerts = snapshot?.totalAlerts ?? 0;
+  const minTs = snapshot?.minTs ?? 0;
+  const maxTs = snapshot?.maxTs ?? Date.now();
+  const countByZoneInit = snapshot ? new Map(Object.entries(snapshot.countByCity)) : new Map();
+
+  console.log(`Loaded snapshot: ${totalAlerts} alerts, ${geojson.features.length} zones`);
+  console.time("init:snapshot-render");
 
   // Build city lookups
   const cityToZone = new Map();
@@ -76,7 +80,7 @@ async function init() {
   const threatSelect = document.getElementById("threat-filter");
 
   const subtitle = document.getElementById("subtitle");
-  subtitle.textContent = `${fmt(alerts.length)} ${t("totalSuffix")}`;
+  subtitle.textContent = `${fmt(totalAlerts)} ${t("totalSuffix")}`;
 
   // Stats panel elements
   const statTotal = document.getElementById("stat-total");
@@ -104,15 +108,17 @@ async function init() {
   const dayFmt = d3.timeFormat("%b %d");
 
   // Create map
-  const countByZone = d3.rollup(alerts, (v) => v.length, (d) => d.data);
   let onMapCityClick = null;
-  const { ready, recolor, zoomToZone, zoomToCity, highlightCity } = createMap(document.getElementById("map-container"), geojson, countByZone, (nameHe) => {
+  const { ready, recolor, zoomToZone, zoomToCity, highlightCity } = createMap(document.getElementById("map-container"), geojson, countByZoneInit, (nameHe) => {
     if (onMapCityClick) onMapCityClick(nameHe);
   });
 
-  // Sparkline area chart (alerts per day)
-  const minDate = d3.min(alerts, (d) => d._ts);
-  const maxDate = d3.max(alerts, (d) => d._ts);
+  // Sparkline area chart (alerts per hour)
+  // Convert UTC epoch ms to Israel wall-clock dates for display/d3
+  const minDate = toIL(new Date(minTs));
+  const maxDate = toIL(new Date(maxTs));
+  // Israel-to-UTC offset (ms) for converting slider values back to UTC for queries
+  const ilOffset = minDate.getTime() - minTs;
 
   const sparkContainer = document.getElementById("sparkline");
   const sparkW = sparkContainer.clientWidth;
@@ -180,15 +186,23 @@ async function init() {
       tooltip.style.display = "none";
     });
 
-  function updateSparkline(filtered) {
-    const countMap = d3.rollup(filtered, (v) => v.length, (d) => +d3.timeHour(d._ts));
+  // Render from snapshot immediately (before DuckDB loads)
+  if (snapshot) {
+    statTotal.textContent = fmt(snapshot.totalAlerts);
+    statCities.textContent = fmt(snapshot.cities);
+    statPeakDay.textContent = dayFmt(toIL(new Date(snapshot.peakDayMs)));
+    statPeakCount.textContent = `${fmt(snapshot.peakCount)} ${t("alerts")}`;
+    statMissiles.textContent = fmt(snapshot.missiles);
+    statDrones.textContent = fmt(snapshot.drones);
+    statInfiltration.textContent = fmt(snapshot.infiltration);
+
+    // Render sparkline from snapshot
+    const sparkMap = new Map(snapshot.sparkline.map(([ms, cnt]) => [ms + ilOffset, cnt]));
     const allHours = d3.timeHour.range(d3.timeHour(minDate), d3.timeHour.offset(maxDate, 1));
-    const hourly = allHours.map((date) => ({ date, count: countMap.get(+date) || 0 }));
+    const hourly = allHours.map((date) => ({ date, count: sparkMap.get(+date) || 0 }));
     yScale.domain([0, d3.max(hourly, (d) => d.count) || 1]);
     sparkPath.datum(hourly).attr("d", areaGen);
   }
-
-  updateSparkline(alerts);
 
   // Time slider (hour resolution)
   const totalHours = Math.ceil((maxDate - minDate) / 3600000);
@@ -239,7 +253,7 @@ async function init() {
   }
   function onSliderChange() {
     onSliderInput();
-    _skipTimeline = true; applyFilters(); _skipTimeline = false;
+    applyFilters();
   }
 
   // Step buttons – flip through full days (midnight to midnight)
@@ -275,7 +289,6 @@ async function init() {
     rangeMin.value = lo;
     rangeMax.value = hi;
     onSliderChange();
-    updateTimelineFilter();
   }
   document.getElementById("step-prev").addEventListener("click", () => snapToDay(-1));
   document.getElementById("step-next").addEventListener("click", () => snapToDay(1));
@@ -302,7 +315,6 @@ async function init() {
       rangeMax.value = hi;
     }
     onSliderChange();
-    updateTimelineFilter();
   }
   document.getElementById("step-prev-hr").addEventListener("click", () => stepHour(-1));
   document.getElementById("step-next-hr").addEventListener("click", () => stepHour(1));
@@ -449,152 +461,155 @@ async function init() {
 
 
   const categoryToThreat = { "1": "missiles", "2": "drones", "10": "terrorists" };
+  const threatLabelKeys = { "1": "missilePrefix", "2": "dronePrefix", "10": "infiltrationPrefix" };
 
-  let _skipTimeline = false;
-  function applyFilters() {
+  let _filterVersion = 0;
+  let _lastEventKey = ""; // tracks threat+ctx+zone+city to skip redundant tier 2/3
+  let _dbReady = false;
+  async function applyFilters() {
+    if (!_dbReady) return;
+    const version = ++_filterVersion;
     const threat = threatSelect.value;
     const zone = zoneSelect.value;
-    const startDate = sliderToDate(+rangeMin.value);
-    const endDate = sliderToDate(+rangeMax.value);
+    // Slider produces Israel wall-clock ms; convert to UTC for DuckDB queries
+    const startMs = +sliderToDate(+rangeMin.value) - ilOffset;
+    const endMs = +sliderToDate(+rangeMax.value) - ilOffset;
+    const eventKey = `${threat}|${currentCtx}|${zone}|${selectedCityHe}`;
 
-    // Threat-filtered base
-    let threatFiltered = alerts;
-    if (threat !== "all") threatFiltered = threatFiltered.filter((d) => d.category === threat);
-
-    // Determine data scope based on context
-    let base = threatFiltered;
-    if (currentCtx === "zone" && zone !== "all") {
-      base = base.filter((d) => cityToZone.get(d.data) === zone);
-    } else if (currentCtx === "city" && selectedCityHe) {
-      base = base.filter((d) => d.data === selectedCityHe);
-    }
-    updateSparkline(base);
-
-    // Time-filtered for map
-    const filtered = base.filter((d) => d._ts >= startDate && d._ts <= endDate);
-    const counts = d3.rollup(filtered, (v) => v.length, (d) => d.data);
-
-    // For zone/city context, use global max so colors stay comparable
-    let fixedMax;
-    if (currentCtx !== "country") {
-      const globalFiltered = threatFiltered.filter((d) => d._ts >= startDate && d._ts <= endDate);
-      const globalCounts = d3.rollup(globalFiltered, (v) => v.length, (d) => d.data);
-      fixedMax = d3.max([...globalCounts.values()]) || 1;
-    }
+    // ── TIER 1: Immediate — DuckDB queries + map + basic stats ──
+    const [counts, fixedMax, stats, sparkData] = await Promise.all([
+      queryCountsByCity(threat, currentCtx, zone, selectedCityHe, startMs, endMs),
+      currentCtx !== "country"
+        ? queryGlobalMax(threat, startMs, endMs)
+        : Promise.resolve(undefined),
+      queryStats(currentCtx, zone, selectedCityHe, startMs, endMs),
+      querySparkline(threat, currentCtx, zone, selectedCityHe),
+    ]);
+    if (version !== _filterVersion) return; // superseded
 
     recolor(counts, fixedMax);
     highlightCity(selectedCityHe);
 
-    // Update stats panel (ignores threat filter)
-    let statsBase = alerts;
-    if (currentCtx === "zone" && zone !== "all") {
-      statsBase = statsBase.filter((d) => cityToZone.get(d.data) === zone);
-    } else if (currentCtx === "city" && selectedCityHe) {
-      statsBase = statsBase.filter((d) => d.data === selectedCityHe);
-    }
-    const statsFiltered = statsBase.filter((d) => d._ts >= startDate && d._ts <= endDate);
-
-    statTotal.textContent = fmt(statsFiltered.length);
-    statCities.textContent = fmt(new Set(statsFiltered.map((d) => d.data)).size);
-
-    const byDay = d3.rollup(statsFiltered, (v) => v.length, (d) => d3.timeDay(d._ts).getTime());
-    if (byDay.size > 0) {
-      const peakEntry = d3.greatest([...byDay], (a, b) => a[1] - b[1]);
-      statPeakDay.textContent = dayFmt(new Date(peakEntry[0]));
-      statPeakCount.textContent = `${fmt(peakEntry[1])} ${t("alerts")}`;
+    // Stats panel
+    statTotal.textContent = fmt(stats.total);
+    statCities.textContent = fmt(stats.cities);
+    if (stats.peakDayMs != null) {
+      statPeakDay.textContent = dayFmt(toIL(new Date(stats.peakDayMs)));
+      statPeakCount.textContent = `${fmt(stats.peakCount)} ${t("alerts")}`;
     } else {
       statPeakDay.textContent = "—";
       statPeakCount.textContent = "";
     }
+    statMissiles.textContent = fmt(stats.missiles);
+    statDrones.textContent = fmt(stats.drones);
+    statInfiltration.textContent = fmt(stats.infiltration);
 
-    const byCat = d3.rollup(statsFiltered, (v) => v.length, (d) => d.category);
-    statMissiles.textContent = fmt(byCat.get("1") || 0);
-    statDrones.textContent = fmt(byCat.get("2") || 0);
-    statInfiltration.textContent = fmt(byCat.get("10") || 0);
+    // Sparkline — convert UTC hour keys to Israel time for matching
+    const sparkMap = new Map(sparkData.map((d) => [d.hour + ilOffset, d.count]));
+    const allHours = d3.timeHour.range(d3.timeHour(minDate), d3.timeHour.offset(maxDate, 1));
+    const hourly = allHours.map((date) => ({ date, count: sparkMap.get(+date) || 0 }));
+    yScale.domain([0, d3.max(hourly, (d) => d.count) || 1]);
+    sparkPath.datum(hourly).attr("d", areaGen);
 
-    // Longest quiet periods (using minute-resolution timeline events)
-    const now = toIL(new Date());
-    const todayStart = d3.timeDay(now);
-    const threeDaysAgo = d3.timeDay.offset(todayStart, -3);
-    const sevenDaysAgo = d3.timeDay.offset(todayStart, -7);
-    let quietEvents = matched;
-    if (threat !== "all") quietEvents = quietEvents.filter((d) => d.threat_type === categoryToThreat[threat]);
-    if (currentCtx === "zone" && zone !== "all") {
-      quietEvents = quietEvents.filter((d) => cityToZone.get(d.data) === zone);
-    } else if (currentCtx === "city" && selectedCityHe) {
-      quietEvents = quietEvents.filter((d) => d.data === selectedCityHe);
-    }
-    const gapToday = longestGap(quietEvents, todayStart, now);
-    const gap3d = longestGap(quietEvents, threeDaysAgo, now);
-    const gap7d = longestGap(quietEvents, sevenDaysAgo, now);
-    const gapAll = longestGap(quietEvents, minDate, now, { fromFirstAlert: true });
-    statQuietToday.textContent = fmtDuration(gapToday.ms);
-    statQuiet3d.textContent = fmtDuration(gap3d.ms);
-    statQuiet7d.textContent = fmtDuration(gap7d.ms);
-    statQuietAll.textContent = fmtDuration(gapAll.ms);
-    statQuietTodayRange.textContent = fmtGapRange(gapToday);
-    statQuiet3dRange.textContent = fmtGapRange(gap3d);
-    statQuiet7dRange.textContent = fmtGapRange(gap7d);
-    statQuietAllRange.textContent = fmtGapRange(gapAll);
-    statQuietToday.parentElement.dataset.gapStart = gapToday.start;
-    statQuietToday.parentElement.dataset.gapEnd = gapToday.end;
-    statQuiet3d.parentElement.dataset.gapStart = gap3d.start;
-    statQuiet3d.parentElement.dataset.gapEnd = gap3d.end;
-    statQuiet7d.parentElement.dataset.gapStart = gap7d.start;
-    statQuiet7d.parentElement.dataset.gapEnd = gap7d.end;
-    statQuietAll.parentElement.dataset.gapStart = gapAll.start;
-    statQuietAll.parentElement.dataset.gapEnd = gapAll.end;
-
-    // Quietest hour (overlay projection onto 24h, excludes today's partial data)
-    const qh3d = quietestHour(quietEvents, threeDaysAgo, todayStart);
-    const qh7d = quietestHour(quietEvents, sevenDaysAgo, todayStart);
-    const qhAll = quietestHour(quietEvents, minDate, todayStart);
-    const fmt3d = fmtTimeRange(qh3d);
-    statQuietest3dRange.textContent = fmt3d.range;
-    statQuietest3dDur.textContent = fmt3d.dur;
-    const fmt7d = fmtTimeRange(qh7d);
-    statQuietest7dRange.textContent = fmt7d.range;
-    statQuietest7dDur.textContent = fmt7d.dur;
-    const fmtAllQ = fmtTimeRange(qhAll);
-    statQuietestAllRange.textContent = fmtAllQ.range;
-    statQuietestAllDur.textContent = fmtAllQ.dur;
-    const qh3dEl = document.getElementById("stat-quietest-3d");
-    const qh7dEl = document.getElementById("stat-quietest-7d");
-    const qhAllEl = document.getElementById("stat-quietest-all");
-    qh3dEl.dataset.startMin = qh3d ? qh3d.startH * 60 + qh3d.startM : "";
-    qh3dEl.dataset.endMin = qh3d ? (qh3d.startH * 60 + qh3d.startM + qh3d.minutes) % 1440 : "";
-    qh3dEl.dataset.fromDay = +threeDaysAgo;
-    qh3dEl.dataset.toDay = +todayStart;
-    qh7dEl.dataset.startMin = qh7d ? qh7d.startH * 60 + qh7d.startM : "";
-    qh7dEl.dataset.endMin = qh7d ? (qh7d.startH * 60 + qh7d.startM + qh7d.minutes) % 1440 : "";
-    qh7dEl.dataset.fromDay = +sevenDaysAgo;
-    qh7dEl.dataset.toDay = +todayStart;
-    qhAllEl.dataset.startMin = qhAll ? qhAll.startH * 60 + qhAll.startM : "";
-    qhAllEl.dataset.endMin = qhAll ? (qhAll.startH * 60 + qhAll.startM + qhAll.minutes) % 1440 : "";
-    qhAllEl.dataset.fromDay = +minDate;
-    qhAllEl.dataset.toDay = +todayStart;
-
-    // Alert heatmap (weighted by recency, excludes today)
-    heatmapChart?.update({
-      "3d": { events: quietEvents, from: threeDaysAgo, to: todayStart },
-      "7d": { events: quietEvents, from: sevenDaysAgo, to: todayStart },
-      "all": { events: quietEvents, from: minDate, to: todayStart },
-    });
-
-
-    if (!_skipTimeline) {
-      updateTimelineFilter();
-      clearAllHighlights();
-    }
     updateResetVisibility();
+
+    // ── TIER 2: Next frame — timeline + filtered events ──
+    // Skip if only the time range changed (timeline/quiet periods don't depend on it)
+    if (eventKey === _lastEventKey) return;
+    _lastEventKey = eventKey;
+
+    requestAnimationFrame(async () => {
+      if (version !== _filterVersion) return;
+
+      const quietEvents = await queryFilteredEvents(threat, currentCtx, zone, selectedCityHe);
+      if (version !== _filterVersion) return;
+
+      updateTimeline(quietEvents);
+      // Dynamic title
+      const prefix = threat !== "all" ? t(threatLabelKeys[threat]) : t("allPrefix");
+      let title = `${prefix} ${t("alertsSuffix")}`;
+      if (currentCtx === "city" && selectedCityHe) {
+        const cityName = lang === "he" ? selectedCityHe : (cityHeToEn.get(selectedCityHe) || cityInput.value);
+        title += ` ${t("inWord")} ${cityName}`;
+      } else if (currentCtx === "zone" && zone !== "all") {
+        const zoneName = lang === "he" ? (zoneEnToHe.get(zone) || zone) : zone;
+        title += ` ${t("inWord")} ${zoneName}`;
+      }
+      timelineTitle.textContent = title;
+      clearAllHighlights();
+
+      // ── TIER 3: Idle — quiet periods + heatmap ──
+      const idle = window.requestIdleCallback || ((cb) => setTimeout(cb, 0));
+      idle(() => {
+        if (version !== _filterVersion) return;
+
+        const now = toIL(new Date());
+        const todayStart = d3.timeDay(now);
+        const threeDaysAgo = d3.timeDay.offset(todayStart, -3);
+        const sevenDaysAgo = d3.timeDay.offset(todayStart, -7);
+
+        const gapToday = longestGap(quietEvents, todayStart, now);
+        const gap3d = longestGap(quietEvents, threeDaysAgo, now);
+        const gap7d = longestGap(quietEvents, sevenDaysAgo, now);
+        const gapAll = longestGap(quietEvents, minDate, now, { fromFirstAlert: true });
+        statQuietToday.textContent = fmtDuration(gapToday.ms);
+        statQuiet3d.textContent = fmtDuration(gap3d.ms);
+        statQuiet7d.textContent = fmtDuration(gap7d.ms);
+        statQuietAll.textContent = fmtDuration(gapAll.ms);
+        statQuietTodayRange.textContent = fmtGapRange(gapToday);
+        statQuiet3dRange.textContent = fmtGapRange(gap3d);
+        statQuiet7dRange.textContent = fmtGapRange(gap7d);
+        statQuietAllRange.textContent = fmtGapRange(gapAll);
+        statQuietToday.parentElement.dataset.gapStart = gapToday.start;
+        statQuietToday.parentElement.dataset.gapEnd = gapToday.end;
+        statQuiet3d.parentElement.dataset.gapStart = gap3d.start;
+        statQuiet3d.parentElement.dataset.gapEnd = gap3d.end;
+        statQuiet7d.parentElement.dataset.gapStart = gap7d.start;
+        statQuiet7d.parentElement.dataset.gapEnd = gap7d.end;
+        statQuietAll.parentElement.dataset.gapStart = gapAll.start;
+        statQuietAll.parentElement.dataset.gapEnd = gapAll.end;
+
+        const qh3d = quietestHour(quietEvents, threeDaysAgo, todayStart);
+        const qh7d = quietestHour(quietEvents, sevenDaysAgo, todayStart);
+        const qhAll = quietestHour(quietEvents, minDate, todayStart);
+        const fmt3d = fmtTimeRange(qh3d);
+        statQuietest3dRange.textContent = fmt3d.range;
+        statQuietest3dDur.textContent = fmt3d.dur;
+        const fmt7d = fmtTimeRange(qh7d);
+        statQuietest7dRange.textContent = fmt7d.range;
+        statQuietest7dDur.textContent = fmt7d.dur;
+        const fmtAllQ = fmtTimeRange(qhAll);
+        statQuietestAllRange.textContent = fmtAllQ.range;
+        statQuietestAllDur.textContent = fmtAllQ.dur;
+        const qh3dEl = document.getElementById("stat-quietest-3d");
+        const qh7dEl = document.getElementById("stat-quietest-7d");
+        const qhAllEl = document.getElementById("stat-quietest-all");
+        qh3dEl.dataset.startMin = qh3d ? qh3d.startH * 60 + qh3d.startM : "";
+        qh3dEl.dataset.endMin = qh3d ? (qh3d.startH * 60 + qh3d.startM + qh3d.minutes) % 1440 : "";
+        qh3dEl.dataset.fromDay = +threeDaysAgo;
+        qh3dEl.dataset.toDay = +todayStart;
+        qh7dEl.dataset.startMin = qh7d ? qh7d.startH * 60 + qh7d.startM : "";
+        qh7dEl.dataset.endMin = qh7d ? (qh7d.startH * 60 + qh7d.startM + qh7d.minutes) % 1440 : "";
+        qh7dEl.dataset.fromDay = +sevenDaysAgo;
+        qh7dEl.dataset.toDay = +todayStart;
+        qhAllEl.dataset.startMin = qhAll ? qhAll.startH * 60 + qhAll.startM : "";
+        qhAllEl.dataset.endMin = qhAll ? (qhAll.startH * 60 + qhAll.startM + qhAll.minutes) % 1440 : "";
+        qhAllEl.dataset.fromDay = +minDate;
+        qhAllEl.dataset.toDay = +todayStart;
+
+        heatmapChart?.update({
+          "3d": { events: quietEvents, from: threeDaysAgo, to: todayStart },
+          "7d": { events: quietEvents, from: sevenDaysAgo, to: todayStart },
+          "all": { events: quietEvents, from: minDate, to: todayStart },
+        });
+      });
+    });
   }
 
   rangeMin.addEventListener("input", onSliderInput);
   rangeMax.addEventListener("input", onSliderInput);
   rangeMin.addEventListener("change", onSliderChange);
   rangeMax.addEventListener("change", onSliderChange);
-  rangeMin.addEventListener("change", updateTimelineFilter);
-  rangeMax.addEventListener("change", updateTimelineFilter);
   threatSelect.addEventListener("change", applyFilters);
   zoneSelect.addEventListener("change", () => {
     cityInput.value = "";
@@ -687,29 +702,26 @@ async function init() {
     zoomToZone("all");
   });
 
-  // Initial stats (wait for map sources to be ready), then select Today
-  ready.then(() => { applyFilters(); quietRows[0].click(); });
+  // Wait for DuckDB init (started in parallel at top of init)
+  console.timeEnd("init:snapshot-render");
+  console.time("init:await-duckdb");
+  await dbReadyP;
+  console.timeEnd("init:await-duckdb");
+  _dbReady = true;
 
-  // Hydrate timeline events from compact format
-  const threatTypes = ["missiles", "drones", "terrorists"];
-  const eventsBase = new Date(eventsData.base).getTime();
-  const matched = [];
-  for (let i = 0; i < eventsData.c.length; i++) {
-    const data = eventsData.cities[eventsData.c[i]];
-    const threat_type = threatTypes[eventsData.t[i]];
-    const _start = toIL(new Date(eventsBase + eventsData.s[i] * 60000));
-    const _end = eventsData.r[i] != null ? toIL(new Date(eventsBase + eventsData.r[i] * 60000)) : null;
-    const NAME_HE = data;
-    const NAME_EN = cityHeToEn.get(data) || data;
-    matched.push({ data, threat_type, _start, _end, NAME_HE, NAME_EN });
-  }
+  // Get all events from DuckDB for initial timeline render
+  const matched = await queryFilteredEvents("all", "country", "all", null);
 
+  // Create timeline + heatmap
   const timelineEl = document.getElementById("timeline-container");
   const { update: updateTimeline, updateLegendLabels, highlightGap, highlightHourRange } = createTimeline(timelineEl, matched);
   const heatmapEl = document.getElementById("heatmap-container");
   const isMobile = window.innerWidth < 640;
   if (isMobile) heatmapEl.style.display = "none";
   const heatmapChart = isMobile ? null : createHeatmap(heatmapEl, timelineEl);
+
+  // Apply filters once map is ready
+  ready.then(() => { applyFilters(); quietRows[0].click(); });
   const timelineTitle = document.getElementById("timeline-title");
 
   // Quiet period & quietest hour click-to-highlight
@@ -752,36 +764,7 @@ async function init() {
     });
   }
 
-  // Map category codes for timeline filtering
-  const threatLabelKeys = { "1": "missilePrefix", "2": "dronePrefix", "10": "infiltrationPrefix" };
-
-  function updateTimelineFilter() {
-    const threat = threatSelect.value;
-    const zone = zoneSelect.value;
-
-    let filtered = matched;
-    if (threat !== "all") filtered = filtered.filter((d) => d.threat_type === categoryToThreat[threat]);
-    if (currentCtx === "zone" && zone !== "all") {
-      filtered = filtered.filter((d) => cityToZone.get(d.data) === zone);
-    } else if (currentCtx === "city" && selectedCityHe) {
-      filtered = filtered.filter((d) => d.data === selectedCityHe);
-    }
-    updateTimeline(filtered);
-
-    // Dynamic title
-    const prefix = threat !== "all" ? t(threatLabelKeys[threat]) : t("allPrefix");
-    let title = `${prefix} ${t("alertsSuffix")}`;
-    if (currentCtx === "city" && selectedCityHe) {
-      const cityName = lang === "he" ? selectedCityHe : (cityHeToEn.get(selectedCityHe) || cityInput.value);
-      title += ` ${t("inWord")} ${cityName}`;
-    } else if (currentCtx === "zone" && zone !== "all") {
-      const zoneName = lang === "he" ? (zoneEnToHe.get(zone) || zone) : zone;
-      title += ` ${t("inWord")} ${zoneName}`;
-    }
-    timelineTitle.textContent = title;
-  }
-
-  updateTimelineFilter();
+  // Timeline filtering is now handled by applyFilters tier 2
 
   // Populate city datalist for current language
   function populateCityList() {
@@ -858,7 +841,7 @@ async function init() {
     cityInput.value = "";
 
     // Update subtitle
-    subtitle.textContent = `${fmt(alerts.length)} ${t("totalSuffix")}`;
+    subtitle.textContent = `${fmt(totalAlerts)} ${t("totalSuffix")}`;
 
     // Update timeline legend & heatmap labels
     updateLegendLabels();

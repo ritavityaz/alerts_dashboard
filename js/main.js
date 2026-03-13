@@ -4,6 +4,7 @@ import { createTimeline } from "./timeline.js";
 import { createHeatmap } from "./heatmap.js";
 import { lang, setLang, t } from "./i18n.js";
 import { initDB, queryCountsByCity, queryGlobalMax, queryStats, querySparkline, queryFilteredEvents } from "./db.js";
+import { showTooltip, hideTooltip } from "./tooltip.js";
 
 const DATA_URL = import.meta.env.VITE_DATA_URL || "";
 
@@ -57,13 +58,39 @@ async function init() {
     }
   }
 
-  // Populate city datalist
+  // City dropdown
   const cityNames = [...cityEnToHe.keys()].sort();
-  const cityList = document.getElementById("city-list");
-  for (const c of cityNames) {
-    const opt = document.createElement("option");
-    opt.value = c;
-    cityList.appendChild(opt);
+  const cityNamesHe = [...cityHeToEn.keys()].sort();
+  const cityDropdown = document.getElementById("city-dropdown");
+
+  function getCityList() {
+    return lang === "he" ? cityNamesHe : cityNames;
+  }
+
+  function showDropdown(filter) {
+    const list = getCityList();
+    const q = filter.toLowerCase();
+    const matches = q
+      ? list.filter((c) => c.toLowerCase().includes(q)).sort((a, b) => {
+          const aStarts = a.toLowerCase().startsWith(q) ? 0 : 1;
+          const bStarts = b.toLowerCase().startsWith(q) ? 0 : 1;
+          return aStarts - bStarts || a.localeCompare(b);
+        })
+      : list;
+    cityDropdown.innerHTML = "";
+    for (const c of matches.slice(0, 50)) {
+      const li = document.createElement("li");
+      li.textContent = c;
+      li.className = "px-3 py-1.5 cursor-pointer hover:bg-gray-700 text-gray-200";
+      li.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        cityInput.value = c;
+        cityDropdown.classList.add("hidden");
+        cityInput.dispatchEvent(new Event("change"));
+      });
+      cityDropdown.appendChild(li);
+    }
+    cityDropdown.classList.toggle("hidden", matches.length === 0);
   }
 
   // Populate zone filter dropdown
@@ -163,8 +190,7 @@ async function init() {
     .attr("stroke", "#94a3b8").attr("stroke-width", 0.5)
     .style("display", "none");
 
-  const tooltip = document.getElementById("tooltip");
-  const sparkDateFmt = d3.timeFormat("%b %d");
+  const sparkDateFmt = d3.timeFormat("%b %d %H:%M");
 
   sparkSvg.append("rect")
     .attr("width", sparkW).attr("height", sparkH)
@@ -177,14 +203,11 @@ async function init() {
       const data = sparkPath.datum();
       const match = data?.find((d) => +d.date === +hour);
       hoverLine.attr("x1", mx).attr("x2", mx).style("display", null);
-      tooltip.style.display = "block";
-      tooltip.style.left = `${event.pageX + 12}px`;
-      tooltip.style.top = `${event.pageY - 30}px`;
-      tooltip.innerHTML = `<strong>${sparkDateFmt(hour)}</strong><br>${fmt(match?.count || 0)} ${t("alerts")}`;
+      showTooltip(event.pageX, event.pageY, `<strong>${sparkDateFmt(hour)}</strong><br>${fmt(match?.count || 0)} ${t("alerts")}`);
     })
     .on("mouseleave", () => {
       hoverLine.style("display", "none");
-      tooltip.style.display = "none";
+      hideTooltip();
     });
 
   // Render from snapshot immediately (before DuckDB loads)
@@ -636,6 +659,13 @@ async function init() {
   // City picker
   const cityInput = document.getElementById("city-filter");
 
+  cityInput.addEventListener("input", () => showDropdown(cityInput.value));
+  cityInput.addEventListener("focus", () => showDropdown(cityInput.value));
+  cityInput.addEventListener("blur", () => {
+    // Delay to allow mousedown on dropdown item
+    setTimeout(() => cityDropdown.classList.add("hidden"), 150);
+  });
+
   function resolveCityInput(value) {
     // Try English first, then Hebrew
     return cityEnToHe.get(value) || (cityHeToEn.has(value) ? value : null);
@@ -769,17 +799,9 @@ async function init() {
 
   // Timeline filtering is now handled by applyFilters tier 2
 
-  // Populate city datalist for current language
+  // Refresh dropdown for current language (called on lang switch)
   function populateCityList() {
-    cityList.innerHTML = "";
-    const names = lang === "he"
-      ? [...cityHeToEn.keys()].sort()
-      : [...cityEnToHe.keys()].sort();
-    for (const c of names) {
-      const opt = document.createElement("option");
-      opt.value = c;
-      cityList.appendChild(opt);
-    }
+    cityDropdown.classList.add("hidden");
   }
 
   // Populate zone dropdown for current language

@@ -1,5 +1,6 @@
 import * as d3 from "d3";
 import { t } from "./i18n.js";
+import { showTooltip, hideTooltip } from "./tooltip.js";
 
 const BINS = 48; // 30-minute resolution
 const COL_GAP = 4;
@@ -92,7 +93,6 @@ export function createHeatmap(container, timelineContainer) {
 
   // Data groups per column
   const colGroups = COLS.map((_, i) => svg.append("g").attr("transform", `translate(${colX(i)},0)`));
-  const tooltip = document.getElementById("tooltip");
 
   function update(data) {
     // data: { "3d": { events, from, to }, "7d": ..., "all": ... }
@@ -116,12 +116,9 @@ export function createHeatmap(container, timelineContainer) {
           const j = bins.indexOf(v);
           const hourStart = j * 24 / BINS;
           const hourEnd = (j + 1) * 24 / BINS;
-          tooltip.style.display = "block";
-          tooltip.style.left = `${event.pageX + 12}px`;
-          tooltip.style.top = `${event.pageY - 12}px`;
-          tooltip.innerHTML = `<strong>${fmtHour(hourStart)}–${fmtHour(hourEnd)}</strong><br>${t(col.i18n)}<br>${v.toFixed(1)} weighted`;
+          showTooltip(event.pageX, event.pageY, `<strong>${fmtHour(hourStart)}–${fmtHour(hourEnd)}</strong><br>${t(col.i18n)}<br>${v.toFixed(1)} weighted`);
         })
-        .on("mouseleave", () => { tooltip.style.display = "none"; });
+        .on("mouseleave", () => { hideTooltip(); });
     });
   }
 

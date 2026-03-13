@@ -1,6 +1,7 @@
 const maplibregl = window.maplibregl;
 import * as d3 from "d3";
 import { lang, t } from "./i18n.js";
+import { showTooltip, hideTooltip } from "./tooltip.js";
 
 function renderLegend(maxCount) {
   const canvas = document.getElementById("legend-bar");
@@ -41,7 +42,6 @@ export function createMap(container, geojson, countByZone, onCityClick) {
     fitBoundsOptions: { padding: 20 },
   });
 
-  const tooltip = document.getElementById("tooltip");
   const fmt = d3.format(",");
   const emptyGeoJSON = { type: "FeatureCollection", features: [] };
 
@@ -85,18 +85,15 @@ export function createMap(container, geojson, countByZone, onCityClick) {
       const count = state?.count || 0;
       if (count > 0) {
         map.getCanvas().style.cursor = "pointer";
-        tooltip.style.display = "block";
-        tooltip.style.left = `${e.originalEvent.pageX + 12}px`;
-        tooltip.style.top = `${e.originalEvent.pageY - 12}px`;
         const name = lang === "he" ? p.name_he : p.name_en;
         const zone = lang === "he" ? p.zone_he : p.zone_en;
-        tooltip.innerHTML = `<strong>${name}</strong><br>${zone}<br>${fmt(count)} ${t("alerts")}`;
+        showTooltip(e.originalEvent.pageX, e.originalEvent.pageY, `<strong>${name}</strong><br>${zone}<br>${fmt(count)} ${t("alerts")}`);
       }
     });
 
     map.on("mouseleave", "zone-fill", () => {
       map.getCanvas().style.cursor = "";
-      tooltip.style.display = "none";
+      hideTooltip();
     });
 
     map.on("click", "zone-fill", (e) => {

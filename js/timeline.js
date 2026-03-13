@@ -1,5 +1,6 @@
 import * as d3 from "d3";
 import { lang, t } from "./i18n.js";
+import { showTooltip, hideTooltip } from "./tooltip.js";
 
 function toFractionalHour(date) {
   return date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
@@ -162,7 +163,6 @@ export function createTimeline(container, allAlerts) {
     .attr("stroke-dasharray", "2,2");
 
   const dataGroup = svg.append("g");
-  const tooltip = document.getElementById("tooltip");
   const timeFmt = d3.timeFormat("%H:%M");
 
   function update(alerts) {
@@ -181,16 +181,13 @@ export function createTimeline(container, allAlerts) {
       .attr("fill-opacity", 0.5)
       .attr("rx", 1)
       .on("mousemove", (event, d) => {
-        tooltip.style.display = "block";
-        tooltip.style.left = `${event.pageX + 12}px`;
-        tooltip.style.top = `${event.pageY - 12}px`;
         const startStr = timeFmt(d._start);
         const endStr = d._end ? timeFmt(d._end) : "";
         const name = lang === "he" ? (d.NAME_HE || d.data) : (d.NAME_EN || d.data);
         const threat = t(threatI18nKeys[d.threat_type]);
-        tooltip.innerHTML = `<strong>${name}</strong><br>${threat}<br>${startStr}${endStr ? " – " + endStr : ""}`;
+        showTooltip(event.pageX, event.pageY, `<strong>${name}</strong><br>${threat}<br>${startStr}${endStr ? " – " + endStr : ""}`);
       })
-      .on("mouseleave", () => { tooltip.style.display = "none"; });
+      .on("mouseleave", () => { hideTooltip(); });
 
     const dots = slices.filter((d) => d.y1 === null);
     dataGroup.selectAll(".alert-dot")
@@ -203,14 +200,11 @@ export function createTimeline(container, allAlerts) {
       .attr("fill", (d) => threatColors[d.threat_type] || "#6366f1")
       .attr("fill-opacity", 0.7)
       .on("mousemove", (event, d) => {
-        tooltip.style.display = "block";
-        tooltip.style.left = `${event.pageX + 12}px`;
-        tooltip.style.top = `${event.pageY - 12}px`;
         const name = lang === "he" ? (d.NAME_HE || d.data) : (d.NAME_EN || d.data);
         const threat = t(threatI18nKeys[d.threat_type]);
-        tooltip.innerHTML = `<strong>${name}</strong><br>${threat}<br>${timeFmt(d._start)}`;
+        showTooltip(event.pageX, event.pageY, `<strong>${name}</strong><br>${threat}<br>${timeFmt(d._start)}`);
       })
-      .on("mouseleave", () => { tooltip.style.display = "none"; });
+      .on("mouseleave", () => { hideTooltip(); });
   }
 
   update(allAlerts);

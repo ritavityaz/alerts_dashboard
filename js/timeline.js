@@ -41,8 +41,8 @@ const threatColors = {
 };
 
 export function createTimeline(container, allAlerts) {
-  const margin = { top: 30, right: 16, bottom: 16, left: 44 };
-  const width = container.clientWidth;
+  const yAxisWidth = 44;
+  const margin = { top: 30, right: 16, bottom: 16 };
   const height = 600;
 
   // Fixed day domain from all alerts
@@ -74,21 +74,42 @@ export function createTimeline(container, allAlerts) {
     }
   }
 
-  const svg = d3.select(container).append("svg")
-    .attr("width", width)
-    .attr("height", height)
-    .attr("viewBox", [0, 0, width, height]);
+  // Wrapper: fixed Y-axis on left + scrollable chart area on right
+  const wrapper = d3.select(container).append("div")
+    .style("display", "flex")
+    .style("position", "relative");
 
-  const x = d3.scaleBand()
-    .domain(days)
-    .range([margin.left, width - margin.right])
-    .padding(0.1);
+  // Fixed Y-axis column
+  const yAxisSvg = wrapper.append("svg")
+    .attr("width", yAxisWidth)
+    .attr("height", height)
+    .style("flex-shrink", "0");
 
   const y = d3.scaleLinear()
     .domain([0, 24])
     .range([margin.top, height - margin.bottom]);
 
-  // X-axis (top)
+  // Scrollable chart area
+  const scrollDiv = wrapper.append("div")
+    .style("flex", "1")
+    .style("min-width", "0")
+    .style("overflow-x", "auto");
+
+  // Compute data SVG width: enough room for all day columns
+  const minColWidth = 14;
+  const availableWidth = container.clientWidth - yAxisWidth;
+  const dataWidth = Math.max(availableWidth, days.length * minColWidth) + margin.right;
+
+  const svg = scrollDiv.append("svg")
+    .attr("width", dataWidth)
+    .attr("height", height);
+
+  const x = d3.scaleBand()
+    .domain(days)
+    .range([0, dataWidth - margin.right])
+    .padding(0.1);
+
+  // X-axis (top) — inside scrollable SVG
   svg.append("g")
     .attr("transform", `translate(0,${margin.top})`)
     .call(d3.axisTop(x).tickFormat(d3.timeFormat("%-d")).tickSize(0))
@@ -112,9 +133,9 @@ export function createTimeline(container, allAlerts) {
     .attr("font-weight", "bold")
     .text(d3.timeFormat("%b"));
 
-  // Y-axis (left)
-  svg.append("g")
-    .attr("transform", `translate(${margin.left},0)`)
+  // Y-axis (fixed left column) — draw tick lines full width in data SVG, labels in yAxisSvg
+  yAxisSvg.append("g")
+    .attr("transform", `translate(${yAxisWidth},0)`)
     .call(
       d3.axisLeft(y)
         .tickValues(d3.range(0, 25, 3))
@@ -123,11 +144,22 @@ export function createTimeline(container, allAlerts) {
           if (h === 12) return "12pm";
           return h < 12 ? `${h}am` : `${h - 12}pm`;
         })
-        .tickSize(-(width - margin.left - margin.right))
+        .tickSize(0)
     )
     .call((g) => g.select(".domain").remove())
-    .call((g) => g.selectAll(".tick line").attr("stroke", "#1e293b").attr("stroke-dasharray", "2,2"))
-    .call((g) => g.selectAll(".tick text").attr("fill", "#64748b").attr("font-size", "10px"));
+    .call((g) => g.selectAll(".tick text").attr("fill", "#64748b").attr("font-size", "10px").attr("dx", "-4"));
+
+  // Horizontal gridlines inside scrollable SVG
+  svg.append("g")
+    .selectAll("line")
+    .data(d3.range(0, 25, 3))
+    .join("line")
+    .attr("x1", 0)
+    .attr("x2", dataWidth)
+    .attr("y1", (h) => y(h))
+    .attr("y2", (h) => y(h))
+    .attr("stroke", "#1e293b")
+    .attr("stroke-dasharray", "2,2");
 
   const dataGroup = svg.append("g");
   const tooltip = document.getElementById("tooltip");
@@ -183,6 +215,12 @@ export function createTimeline(container, allAlerts) {
 
   update(allAlerts);
 
+  // Scroll to the end so the most recent days (including today) are visible
+  requestAnimationFrame(() => {
+    const node = scrollDiv.node();
+    node.scrollLeft = node.scrollWidth;
+  });
+
   const highlightGroup = svg.append("g");
 
   function highlightGap(startMs, endMs) {
@@ -191,7 +229,6 @@ export function createTimeline(container, allAlerts) {
     const start = new Date(startMs);
     const end = new Date(endMs);
 
-    // Iterate day columns that fall within the gap
     for (const day of days) {
       const dayStart = day;
       const dayEnd = d3.timeDay.offset(day, 1);
@@ -222,7 +259,6 @@ export function createTimeline(container, allAlerts) {
     if (startMin == null || endMin == null) return;
     const hourFrom = startMin / 60;
     const hourTo = endMin / 60;
-    // Handle wrap-around (e.g. 23:00–02:00)
     const wraps = hourTo <= hourFrom;
 
     for (const day of days) {
@@ -231,7 +267,6 @@ export function createTimeline(container, allAlerts) {
       if (colX == null) continue;
 
       if (wraps) {
-        // Draw two rects: startMin→24:00 and 00:00→endMin
         highlightGroup.append("rect")
           .attr("x", colX).attr("width", x.bandwidth())
           .attr("y", y(hourFrom))

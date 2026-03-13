@@ -116,18 +116,19 @@ async function init() {
   // Sparkline area chart (alerts per hour)
   // Convert UTC epoch ms to Israel wall-clock dates for display/d3
   const minDate = toIL(new Date(minTs));
-  const maxDate = toIL(new Date(maxTs));
+  const maxDate = toIL(new Date(Math.max(maxTs, Date.now())));
   // Israel-to-UTC offset (ms) for converting slider values back to UTC for queries
   const ilOffset = minDate.getTime() - minTs;
 
   const sparkContainer = document.getElementById("sparkline");
   const sparkW = sparkContainer.clientWidth;
   const sparkH = 40;
+  const thumbR = 7; // half of 14px slider thumb — aligns sparkline with range track
 
   const sparkSvg = d3.select(sparkContainer).append("svg")
     .attr("width", sparkW).attr("height", sparkH);
 
-  const xScale = d3.scaleTime().domain([minDate, maxDate]).range([0, sparkW]);
+  const xScale = d3.scaleTime().domain([minDate, maxDate]).range([thumbR, sparkW - thumbR]);
   const yScale = d3.scaleLinear().range([sparkH, 0]);
 
   const areaGen = d3.area()
@@ -219,23 +220,23 @@ async function init() {
   rangeMin.value = 0;
   rangeMax.value = totalHours;
 
-  startLabel.textContent = dateFmt(minDate);
-  endLabel.textContent = dateFmt(maxDate);
+  startLabel.textContent = dateFmtHour(minDate);
+  endLabel.textContent = dateFmtHour(maxDate);
 
   function sliderToDate(val) {
     return new Date(minDate.getTime() + val * 3600000);
   }
 
   function sliderDateLabel(date) {
-    const h = date.getHours();
-    return h === 0 ? dateFmt(date) : dateFmtHour(date);
+    return dateFmtHour(date);
   }
 
   function updateHighlight() {
-    const lo = +rangeMin.value / totalHours * 100;
-    const hi = +rangeMax.value / totalHours * 100;
-    highlight.style.left = `${lo}%`;
-    highlight.style.width = `${hi - lo}%`;
+    const trackW = sparkW - 2 * thumbR;
+    const loPx = thumbR + (+rangeMin.value / totalHours) * trackW;
+    const hiPx = thumbR + (+rangeMax.value / totalHours) * trackW;
+    highlight.style.left = `${loPx}px`;
+    highlight.style.width = `${hiPx - loPx}px`;
   }
 
   updateHighlight();
@@ -472,8 +473,10 @@ async function init() {
     const threat = threatSelect.value;
     const zone = zoneSelect.value;
     // Slider produces Israel wall-clock ms; convert to UTC for DuckDB queries
-    const startMs = +sliderToDate(+rangeMin.value) - ilOffset;
-    const endMs = +sliderToDate(+rangeMax.value) - ilOffset;
+    // Pass null when at full range to skip time filtering entirely
+    const isFullRange = +rangeMin.value === 0 && +rangeMax.value === totalHours;
+    const startMs = isFullRange ? null : +sliderToDate(+rangeMin.value) - ilOffset;
+    const endMs = isFullRange ? null : +sliderToDate(+rangeMax.value) - ilOffset;
     const eventKey = `${threat}|${currentCtx}|${zone}|${selectedCityHe}`;
 
     // ── TIER 1: Immediate — DuckDB queries + map + basic stats ──

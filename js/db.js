@@ -218,9 +218,13 @@ export async function queryFilteredEvents(threat, ctx, zone, city) {
     FROM events ${where}
   `);
 
-  // Events store Israel wall-clock ms as if UTC. Shift once by browser TZ offset
+  // Events store Israel wall-clock ms as if UTC. Shift by browser TZ offset
   // so Date local fields (.getHours() etc.) show Israel time for d3.
-  const tzShift = new Date().getTimezoneOffset() * 60000;
+  // Use each date's own offset to handle DST transitions correctly.
+  function toFakeLocal(ms) {
+    const d = new Date(ms);
+    return new Date(ms + d.getTimezoneOffset() * 60000);
+  }
 
   const rows = [];
   const dataCol = result.getChild("data");
@@ -233,8 +237,8 @@ export async function queryFilteredEvents(threat, ctx, zone, city) {
     rows.push({
       data: dataCol.get(i),
       threat_type: ttCol.get(i),
-      _start: new Date(Number(sCol.get(i)) + tzShift),
-      _end: endMs != null ? new Date(Number(endMs) + tzShift) : null,
+      _start: toFakeLocal(Number(sCol.get(i))),
+      _end: endMs != null ? toFakeLocal(Number(endMs)) : null,
       NAME_HE: dataCol.get(i),
       NAME_EN: enCol.get(i) || dataCol.get(i),
     });

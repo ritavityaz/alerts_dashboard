@@ -3,7 +3,8 @@ import { createMap } from "./map.js";
 import { createTimeline } from "./timeline.js";
 import { createHeatmap } from "./heatmap.js";
 import { lang, setLang, t } from "./i18n.js";
-import { initDB, queryCountsByCity, queryGlobalMax, queryStats, querySparkline, queryFilteredEvents } from "./db.js";
+import { initDB, queryCountsByCity, queryGlobalMax, queryStats, querySparkline, queryFilteredEvents, queryZonesByThreat, queryCitiesByThreat } from "./db.js";
+import { createZoneStackedChart } from "./charts.js";
 import { showTooltip, hideTooltip } from "./tooltip.js";
 
 const DATA_URL = import.meta.env.VITE_DATA_URL || "";
@@ -226,6 +227,11 @@ async function init() {
     const hourly = allHours.map((date) => ({ date, count: sparkMap.get(+date) || 0 }));
     yScale.domain([0, d3.max(hourly, (d) => d.count) || 1]);
     sparkPath.datum(hourly).attr("d", areaGen);
+  }
+
+  // Set data-i18n-html elements on initial load
+  for (const el of document.querySelectorAll("[data-i18n-html]")) {
+    el.innerHTML = t(el.dataset.i18nHtml);
   }
 
   // Time slider (hour resolution)
@@ -503,13 +509,14 @@ async function init() {
     const eventKey = `${threat}|${currentCtx}|${zone}|${selectedCityHe}`;
 
     // ── TIER 1: Immediate — DuckDB queries + map + basic stats ──
-    const [counts, fixedMax, stats, sparkData] = await Promise.all([
+    const [counts, fixedMax, stats, sparkData, zoneRows] = await Promise.all([
       queryCountsByCity(threat, currentCtx, zone, selectedCityHe, startMs, endMs),
       currentCtx !== "country"
         ? queryGlobalMax(threat, startMs, endMs)
         : Promise.resolve(undefined),
       queryStats(currentCtx, zone, selectedCityHe, startMs, endMs),
       querySparkline(threat, currentCtx, zone, selectedCityHe),
+      queryZonesByThreat(startMs, endMs),
     ]);
     if (version !== _filterVersion) return; // superseded
 
@@ -529,6 +536,18 @@ async function init() {
     statMissiles.textContent = fmt(stats.missiles);
     statDrones.textContent = fmt(stats.drones);
     statInfiltration.textContent = fmt(stats.infiltration);
+
+    zonesChart.update(zoneRows);
+
+    // Update zones chart title with date range
+    const zonesTitle = document.getElementById("zones-chart-title");
+    if (isFullRange) {
+      zonesTitle.textContent = t("alertsByZone");
+    } else {
+      const rangeStart = dateFmtHour(sliderToDate(+rangeMin.value));
+      const rangeEnd = dateFmtHour(sliderToDate(+rangeMax.value));
+      zonesTitle.textContent = `${t("alertsByZone")} (${rangeStart} – ${rangeEnd})`;
+    }
 
     // Sparkline — convert UTC hour keys to Israel time for matching
     const sparkMap = new Map(sparkData.map((d) => [d.hour + ilOffset, d.count]));
@@ -753,6 +772,26 @@ async function init() {
   if (isMobile) heatmapEl.style.display = "none";
   const heatmapChart = isMobile ? null : createHeatmap(heatmapEl, timelineEl);
 
+  // Zone stacked bar chart
+  function getSliderMs() {
+    const isFullRange = +rangeMin.value === 0 && +rangeMax.value === totalHours;
+    return {
+      startMs: isFullRange ? null : +sliderToDate(+rangeMin.value) - ilOffset,
+      endMs: isFullRange ? null : +sliderToDate(+rangeMax.value) - ilOffset,
+    };
+  }
+  const zonesChart = createZoneStackedChart(
+    document.getElementById("zones-chart"),
+    (zone) => {
+      const { startMs, endMs } = getSliderMs();
+      return queryCitiesByThreat(zone, startMs, endMs);
+    },
+    (name) => {
+      if (lang === "he") return zoneEnToHe.get(name) || name;
+      return cityHeToEn.get(name) || name;
+    },
+  );
+
   // Apply filters once map is ready
   ready.then(() => { applyFilters(); quietRows[0].click(); });
   const timelineTitle = document.getElementById("timeline-title");
@@ -825,6 +864,10 @@ async function init() {
     for (const el of document.querySelectorAll("[data-i18n]")) {
       const key = el.dataset.i18n;
       el.textContent = t(key);
+    }
+    for (const el of document.querySelectorAll("[data-i18n-html]")) {
+      const key = el.dataset.i18nHtml;
+      el.innerHTML = t(key);
     }
   }
 

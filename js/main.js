@@ -91,7 +91,7 @@ async function init() {
       });
       cityDropdown.appendChild(li);
     }
-    cityDropdown.classList.toggle("hidden", matches.length === 0);
+    cityDropdown.classList.toggle("hidden", matches.length === 0); 
   }
 
   // Populate zone filter dropdown

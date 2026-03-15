@@ -281,6 +281,80 @@ export async function queryZonesByThreat(startMs, endMs) {
 }
 
 /**
+ * Get events grouped by zone and threat type, for computing alert duration per zone.
+ * Returns array of {zone, category, start_ms, end_ms, cities} sorted by zone total desc.
+ */
+export async function queryEventsByZone(startMs, endMs) {
+  const clauses = ["zone_en != ''"];
+  if (startMs != null && endMs != null) {
+    clauses.push(`start_ms <= ${endMs} AND end_ms >= ${startMs}`);
+  }
+  const where = "WHERE " + clauses.join(" AND ");
+
+  const result = await conn.query(`
+    WITH filtered AS (
+      SELECT * FROM events ${where} AND end_ms IS NOT NULL
+    ),
+    zone_cities AS (
+      SELECT zone_en, COUNT(DISTINCT data) as cities
+      FROM filtered GROUP BY zone_en
+    ),
+    zone_dur AS (
+      SELECT zone_en, SUM(end_ms - start_ms) as raw_total
+      FROM filtered GROUP BY zone_en
+    )
+    SELECT f.zone_en, f.threat_type, f.start_ms, f.end_ms, zc.cities
+    FROM filtered f
+    JOIN zone_dur zd ON f.zone_en = zd.zone_en
+    JOIN zone_cities zc ON f.zone_en = zc.zone_en
+    ORDER BY zd.raw_total DESC, f.zone_en, f.start_ms
+  `);
+
+  const CATEGORY_MAP = { missiles: "1", drones: "2", terrorists: "10" };
+  return result.toArray().map((r) => ({
+    zone: r.zone_en,
+    category: CATEGORY_MAP[r.threat_type] || r.threat_type,
+    start_ms: Number(r.start_ms),
+    end_ms: Number(r.end_ms),
+    cities: Number(r.cities),
+  }));
+}
+
+/**
+ * Get events for cities within a zone, for computing alert duration per city.
+ * Returns array of {city, category, start_ms, end_ms}.
+ */
+export async function queryEventsByCityInZone(zone, startMs, endMs) {
+  const clauses = [`zone_en = '${escapeSql(zone)}'`, "end_ms IS NOT NULL"];
+  if (startMs != null && endMs != null) {
+    clauses.push(`start_ms <= ${endMs} AND end_ms >= ${startMs}`);
+  }
+  const where = "WHERE " + clauses.join(" AND ");
+
+  const result = await conn.query(`
+    WITH filtered AS (
+      SELECT * FROM events ${where}
+    ),
+    city_dur AS (
+      SELECT data, SUM(end_ms - start_ms) as raw_total
+      FROM filtered GROUP BY data
+    )
+    SELECT f.data, f.threat_type, f.start_ms, f.end_ms
+    FROM filtered f
+    JOIN city_dur cd ON f.data = cd.data
+    ORDER BY cd.raw_total DESC, f.data, f.start_ms
+  `);
+
+  const CATEGORY_MAP = { missiles: "1", drones: "2", terrorists: "10" };
+  return result.toArray().map((r) => ({
+    city: r.data,
+    category: CATEGORY_MAP[r.threat_type] || r.threat_type,
+    start_ms: Number(r.start_ms),
+    end_ms: Number(r.end_ms),
+  }));
+}
+
+/**
  * Get alert counts broken down by city and category within a zone.
  * Returns array of {city, category, count} sorted by total desc.
  */

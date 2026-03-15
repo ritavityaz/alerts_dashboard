@@ -3,8 +3,8 @@ import { createMap } from "./map.js";
 import { createTimeline } from "./timeline.js";
 import { createHeatmap } from "./heatmap.js";
 import { lang, setLang, t } from "./i18n.js";
-import { initDB, queryCountsByCity, queryGlobalMax, queryStats, querySparkline, queryFilteredEvents, queryZonesByThreat, queryCitiesByThreat, queryEventsByZone, queryEventsByCityInZone } from "./db.js";
-import { createZoneStackedChart, createZoneDurationChart } from "./charts.js";
+import { initDB, queryCountsByCity, queryGlobalMax, queryStats, querySparkline, queryFilteredEvents, queryEventsByZone, queryEventsByCityInZone } from "./db.js";
+import { createZoneDurationChart } from "./charts.js";
 import { showTooltip, hideTooltip } from "./tooltip.js";
 
 const DATA_URL = import.meta.env.VITE_DATA_URL || "";
@@ -509,14 +509,13 @@ async function init() {
     const eventKey = `${threat}|${currentCtx}|${zone}|${selectedCityHe}`;
 
     // ── TIER 1: Immediate — DuckDB queries + map + basic stats ──
-    const [counts, fixedMax, stats, sparkData, zoneRows, durationEvents] = await Promise.all([
+    const [counts, fixedMax, stats, sparkData, durationEvents] = await Promise.all([
       queryCountsByCity(threat, currentCtx, zone, selectedCityHe, startMs, endMs),
       currentCtx !== "country"
         ? queryGlobalMax(threat, startMs, endMs)
         : Promise.resolve(undefined),
       queryStats(currentCtx, zone, selectedCityHe, startMs, endMs),
       querySparkline(threat, currentCtx, zone, selectedCityHe),
-      queryZonesByThreat(startMs, endMs),
       queryEventsByZone(startMs, endMs),
     ]);
     if (version !== _filterVersion) return; // superseded
@@ -538,19 +537,15 @@ async function init() {
     statDrones.textContent = fmt(stats.drones);
     statInfiltration.textContent = fmt(stats.infiltration);
 
-    zonesChart.update(zoneRows);
     durationChart.update(durationEvents);
 
-    // Update zones chart title with date range
-    const zonesTitle = document.getElementById("zones-chart-title");
+    // Update duration chart title with date range
     const durationTitle = document.getElementById("duration-chart-title");
     if (isFullRange) {
-      zonesTitle.textContent = t("alertsByZone");
       durationTitle.textContent = t("durationByZone");
     } else {
       const rangeStart = dateFmtHour(sliderToDate(+rangeMin.value));
       const rangeEnd = dateFmtHour(sliderToDate(+rangeMax.value));
-      zonesTitle.textContent = `${t("alertsByZone")} (${rangeStart} – ${rangeEnd})`;
       durationTitle.textContent = `${t("durationByZone")} (${rangeStart} – ${rangeEnd})`;
     }
 
@@ -785,18 +780,6 @@ async function init() {
       endMs: isFullRange ? null : +sliderToDate(+rangeMax.value) - ilOffset,
     };
   }
-  const zonesChart = createZoneStackedChart(
-    document.getElementById("zones-chart"),
-    (zone) => {
-      const { startMs, endMs } = getSliderMs();
-      return queryCitiesByThreat(zone, startMs, endMs);
-    },
-    (name) => {
-      if (lang === "he") return zoneEnToHe.get(name) || name;
-      return cityHeToEn.get(name) || name;
-    },
-  );
-
   const durationChart = createZoneDurationChart(
     document.getElementById("duration-chart"),
     (zone) => {

@@ -247,40 +247,6 @@ export async function queryFilteredEvents(threat, ctx, zone, city) {
 }
 
 /**
- * Get alert counts broken down by zone_en and category (threat type).
- * Returns array of {zone, category, count} sorted by total desc.
- */
-export async function queryZonesByThreat(startMs, endMs) {
-  const clauses = ["zone_en != ''"];
-  if (startMs != null && endMs != null) {
-    clauses.push(`ts >= ${startMs} AND ts <= ${endMs}`);
-  }
-  const where = "WHERE " + clauses.join(" AND ");
-
-  const result = await conn.query(`
-    WITH filtered AS (
-      SELECT * FROM alerts ${where}
-    ),
-    totals AS (
-      SELECT zone_en, SUM(count) as total, COUNT(DISTINCT data) as cities
-      FROM filtered GROUP BY zone_en
-    )
-    SELECT f.zone_en, f.category, SUM(f.count) as cnt, t.cities
-    FROM filtered f
-    JOIN totals t ON f.zone_en = t.zone_en
-    GROUP BY f.zone_en, f.category, t.total, t.cities
-    ORDER BY t.total DESC, f.zone_en, f.category
-  `);
-
-  return result.toArray().map((r) => ({
-    zone: r.zone_en,
-    category: r.category,
-    count: Number(r.cnt),
-    cities: Number(r.cities),
-  }));
-}
-
-/**
  * Get events grouped by zone and threat type, for computing alert duration per zone.
  * Returns array of {zone, category, start_ms, end_ms, cities} sorted by zone total desc.
  */
@@ -354,32 +320,3 @@ export async function queryEventsByCityInZone(zone, startMs, endMs) {
   }));
 }
 
-/**
- * Get alert counts broken down by city and category within a zone.
- * Returns array of {city, category, count} sorted by total desc.
- */
-export async function queryCitiesByThreat(zone, startMs, endMs) {
-  const clauses = [`zone_en = '${escapeSql(zone)}'`];
-  if (startMs != null && endMs != null) {
-    clauses.push(`ts >= ${startMs} AND ts <= ${endMs}`);
-  }
-  const where = "WHERE " + clauses.join(" AND ");
-
-  const result = await conn.query(`
-    WITH totals AS (
-      SELECT data, SUM(count) as total FROM alerts ${where} GROUP BY data
-    )
-    SELECT a.data, a.category, SUM(a.count) as cnt
-    FROM alerts a
-    JOIN totals t ON a.data = t.data
-    ${where}
-    GROUP BY a.data, a.category, t.total
-    ORDER BY t.total DESC, a.data, a.category
-  `);
-
-  return result.toArray().map((r) => ({
-    city: r.data,
-    category: r.category,
-    count: Number(r.cnt),
-  }));
-}

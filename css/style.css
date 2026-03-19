@@ -80,7 +80,7 @@ html {
 }
 
 .tooltip {
-  @apply absolute pointer-events-none bg-black/90 text-white text-xs leading-relaxed px-3 py-2 rounded hidden z-50 max-w-[250px];
+  @apply absolute pointer-events-none bg-black/90 text-white text-xs leading-relaxed px-3 py-2 rounded hidden z-50 max-w-[320px] max-h-[400px] overflow-y-auto;
 }
 
 

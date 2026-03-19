@@ -232,6 +232,7 @@ export async function queryFilteredEvents(threat, ctx, zone, city) {
   const sCol = result.getChild("start_ms");
   const eCol = result.getChild("end_ms");
   const enCol = result.getChild("name_en");
+  const zoneCol = result.getChild("zone_en");
   for (let i = 0; i < result.numRows; i++) {
     const endMs = eCol.get(i);
     rows.push({
@@ -241,6 +242,7 @@ export async function queryFilteredEvents(threat, ctx, zone, city) {
       _end: endMs != null ? toFakeLocal(Number(endMs)) : null,
       NAME_HE: dataCol.get(i),
       NAME_EN: enCol.get(i) || dataCol.get(i),
+      zone_en: zoneCol.get(i) || "",
     });
   }
   return rows;

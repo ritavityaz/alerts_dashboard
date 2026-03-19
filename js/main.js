@@ -5,7 +5,7 @@ import { createHeatmap } from "./heatmap.js";
 import { lang, setLang, t } from "./i18n.js";
 import { initDB, queryCountsByCity, queryGlobalMax, queryStats, querySparkline, queryFilteredEvents, queryEventsByZone, queryEventsByCityInZone } from "./db.js";
 import { createZoneDurationChart } from "./charts.js";
-import { showTooltip, hideTooltip } from "./tooltip.js";
+import { showTooltip, hideTooltip, unpinTooltip, isTooltipPinned } from "./tooltip.js";
 
 const DATA_URL = import.meta.env.VITE_DATA_URL || "";
 
@@ -496,8 +496,20 @@ async function init() {
   let _filterVersion = 0;
   let _lastEventKey = ""; // tracks threat+ctx+zone+city to skip redundant tier 2/3
   let _dbReady = false;
+  let _clusterFilterActive = false; // true when applyFilters was triggered by cluster selection
+  function dismissClusterTooltip() {
+    // Dismiss pinned tooltip and discard saved slider state without re-triggering applyFilters
+    savedSliderMin = null;
+    savedSliderMax = null;
+    unpinTooltip({ silent: true });
+  }
   async function applyFilters() {
     if (!_dbReady) return;
+    // If a cluster tooltip is pinned and this filter change came from elsewhere
+    // (map click, dropdown, etc.), dismiss the tooltip without restoring the slider
+    if (isTooltipPinned() && !_clusterFilterActive) {
+      dismissClusterTooltip();
+    }
     const version = ++_filterVersion;
     const threat = threatSelect.value;
     const zone = zoneSelect.value;
@@ -766,7 +778,36 @@ async function init() {
 
   // Create timeline + heatmap
   const timelineEl = document.getElementById("timeline-container");
-  const { update: updateTimeline, updateLegendLabels, highlightGap, highlightHourRange } = createTimeline(timelineEl, matched);
+  let savedSliderMin = null;
+  let savedSliderMax = null;
+  const { update: updateTimeline, updateLegendLabels, highlightGap, highlightHourRange } = createTimeline(timelineEl, matched, {
+    resolveZoneName: (zoneEn) => lang === "he" ? (zoneEnToHe.get(zoneEn) || zoneEn) : zoneEn,
+    onClusterSelect: (cluster) => {
+      _clusterFilterActive = true;
+      if (cluster) {
+        // Save current slider state before overriding
+        if (savedSliderMin === null) {
+          savedSliderMin = rangeMin.value;
+          savedSliderMax = rangeMax.value;
+        }
+        const clusterSliderMin = Math.max(0, Math.floor((new Date(cluster.startMs) - minDate) / 3600000));
+        const clusterSliderMax = Math.min(totalHours, Math.ceil((new Date(cluster.endMs) - minDate) / 3600000));
+        rangeMin.value = clusterSliderMin;
+        rangeMax.value = Math.max(clusterSliderMax, clusterSliderMin + 1);
+        onSliderChange();
+      } else {
+        // Restore previous slider state
+        if (savedSliderMin !== null) {
+          rangeMin.value = savedSliderMin;
+          rangeMax.value = savedSliderMax;
+          savedSliderMin = null;
+          savedSliderMax = null;
+          onSliderChange();
+        }
+      }
+      _clusterFilterActive = false;
+    },
+  });
   const heatmapEl = document.getElementById("heatmap-container");
   const isMobile = window.innerWidth < 640;
   if (isMobile) heatmapEl.style.display = "none";

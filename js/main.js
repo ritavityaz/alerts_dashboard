@@ -917,6 +917,7 @@ async function init() {
 
   function updateLang(newLang) {
     setLang(newLang);
+    localStorage.setItem("lang", newLang);
 
     // Toggle button styles
     for (const btn of langBtns) {
@@ -963,6 +964,10 @@ async function init() {
   for (const btn of langBtns) {
     btn.addEventListener("click", () => updateLang(btn.dataset.lang));
   }
+
+  // Restore saved language preference
+  const savedLang = localStorage.getItem("lang");
+  if (savedLang && savedLang !== lang) updateLang(savedLang);
 }
 
 init();

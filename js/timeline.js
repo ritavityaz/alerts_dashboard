@@ -243,7 +243,7 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
       : `${spanStart} \u2013 ${spanEnd}`;
 
     const htmlParts = [];
-    htmlParts.push(`<div style="margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid rgba(255,255,255,0.15)"><div dir="ltr" style="font-size:11px"><strong>${timespan}</strong></div><div dir="ltr" style="opacity:0.5;font-size:10px;margin-top:1px">${dedupedSlices.length} ${t("alerts")} &middot; ${uniqueCities.size} ${t("cities")}</div></div>`);
+    htmlParts.push(`<div style="margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid rgba(255,255,255,0.15)"><div dir="ltr" style="font-size:11px"><strong>${timespan}</strong></div><div style="opacity:0.5;font-size:10px;margin-top:1px">${dedupedSlices.length} ${t("alerts")} &middot; ${uniqueCities.size} ${t("cities")}</div></div>`);
 
     if (useZoneGrouping) {
       htmlParts.push(buildZoneGroupedHtml(dedupedSlices));

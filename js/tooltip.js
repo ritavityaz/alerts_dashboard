@@ -76,11 +76,11 @@ tooltip.addEventListener("click", (event) => {
   const toggle = event.target.closest(".tt-toggle");
   if (!toggle) return;
   event.stopPropagation();
-  const targetId = toggle.dataset.target;
-  const target = document.getElementById(targetId);
-  if (!target) return;
+  const target = toggle.nextElementSibling;
+  if (!target || !target.classList.contains("tt-content")) return;
   const isOpen = target.style.display !== "none";
   target.style.display = isOpen ? "none" : "block";
   const arrow = toggle.querySelector(".tt-arrow");
-  if (arrow) arrow.innerHTML = isOpen ? "&#9654;" : "&#9660;";
+  const isRtl = document.body.dir === "rtl";
+  if (arrow) arrow.innerHTML = isOpen ? (isRtl ? "&#9664;" : "&#9654;") : "&#9660;";
 });

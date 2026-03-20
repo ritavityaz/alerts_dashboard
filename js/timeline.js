@@ -243,7 +243,7 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
       : `${spanStart} \u2013 ${spanEnd}`;
 
     const htmlParts = [];
-    htmlParts.push(`<div style="margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid rgba(255,255,255,0.15)"><div style="font-size:11px"><strong>${timespan}</strong></div><div style="opacity:0.5;font-size:10px;margin-top:1px">${dedupedSlices.length} alerts &middot; ${uniqueCities.size} cities</div></div>`);
+    htmlParts.push(`<div style="margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid rgba(255,255,255,0.15)"><div dir="ltr" style="font-size:11px"><strong>${timespan}</strong></div><div dir="ltr" style="opacity:0.5;font-size:10px;margin-top:1px">${dedupedSlices.length} alerts &middot; ${uniqueCities.size} cities</div></div>`);
 
     if (useZoneGrouping) {
       htmlParts.push(buildZoneGroupedHtml(dedupedSlices));
@@ -268,18 +268,20 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
       const threatLabel = t(threatI18nKeys[threatType]);
       parts.push(
         `<div style="margin-top:4px">` +
-        `<span style="display:inline-block;width:8px;height:8px;background:${color};border-radius:2px;margin-right:4px;vertical-align:middle"></span>` +
+        `<span style="display:inline-block;width:8px;height:8px;background:${color};border-radius:2px;margin-inline-end:4px;vertical-align:middle"></span>` +
         `<strong>${threatLabel}</strong></div>`
       );
       for (const slice of group.sort((a, b) => a.y0 - b.y0)) {
         const cityName = lang === "he" ? (slice.NAME_HE || slice.data) : (slice.NAME_EN || slice.data);
         const startStr = timeFmt(slice._start);
         const endStr = slice._end ? " \u2013 " + timeFmt(slice._end) : "";
-        parts.push(`<div style="padding-left:12px"><bdi>${cityName}</bdi> <span style="opacity:0.6">${startStr}${endStr}</span></div>`);
+        parts.push(`<div style="padding-inline-start:12px"><bdi>${cityName}</bdi> <span style="opacity:0.6">${startStr}${endStr}</span></div>`);
       }
     }
     return parts.join("");
   }
+
+  const collapsedArrow = () => lang === "he" ? "&#9664;" : "&#9654;";
 
   /** Zone-grouped collapsible HTML (for large clusters) */
   function buildZoneGroupedHtml(slices) {
@@ -299,62 +301,55 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
     }
 
     const parts = [];
-    const tooltipId = `tt-${Date.now()}`;
-    let groupIdx = 0;
 
     for (const [threatType, zoneMap] of tree) {
       const color = threatColors[threatType] || "#6366f1";
       const threatLabel = t(threatI18nKeys[threatType]);
       parts.push(
         `<div style="margin-top:4px">` +
-        `<span style="display:inline-block;width:8px;height:8px;background:${color};border-radius:2px;margin-right:4px;vertical-align:middle"></span>` +
+        `<span style="display:inline-block;width:8px;height:8px;background:${color};border-radius:2px;margin-inline-end:4px;vertical-align:middle"></span>` +
         `<strong>${threatLabel}</strong></div>`
       );
 
       for (const [zoneKey, cityMap] of zoneMap) {
         const zoneName = resolveZoneName(zoneKey);
         const cityCount = cityMap.size;
-        const zoneId = `${tooltipId}-z${groupIdx++}`;
 
-        // Zone header — clickable to expand/collapse
-        parts.push(
-          `<div class="tt-toggle" data-target="${zoneId}" style="padding-left:8px;cursor:pointer;opacity:0.85;margin-top:2px">` +
-          `<span class="tt-arrow" style="display:inline-block;width:10px;font-size:9px">&#9654;</span>` +
-          `<bdi>${zoneName}</bdi> <span style="opacity:0.5">(${cityCount})</span></div>`
-        );
-
-        // Zone content — hidden by default
-        parts.push(`<div id="${zoneId}" style="display:none">`);
-
+        // Zone: header + collapsible content wrapped in a container
+        const zoneCity = [];
         for (const [cityKey, citySlices] of cityMap) {
           const cityName = lang === "he" ? (citySlices[0].NAME_HE || cityKey) : (citySlices[0].NAME_EN || cityKey);
           const sortedSlices = citySlices.sort((a, b) => a.y0 - b.y0);
 
           if (sortedSlices.length === 1) {
-            // Single event — show inline
             const slice = sortedSlices[0];
             const startStr = timeFmt(slice._start);
             const endStr = slice._end ? " \u2013 " + timeFmt(slice._end) : "";
-            parts.push(`<div style="padding-left:24px"><bdi>${cityName}</bdi> <span style="opacity:0.6">${startStr}${endStr}</span></div>`);
+            zoneCity.push(`<div style="padding-inline-start:24px"><bdi>${cityName}</bdi> <span style="opacity:0.6">${startStr}${endStr}</span></div>`);
           } else {
-            // Multiple events — collapsible city
-            const cityId = `${tooltipId}-c${groupIdx++}`;
-            parts.push(
-              `<div class="tt-toggle" data-target="${cityId}" style="padding-left:24px;cursor:pointer">` +
-              `<span class="tt-arrow" style="display:inline-block;width:10px;font-size:9px">&#9654;</span>` +
-              `<bdi>${cityName}</bdi> <span style="opacity:0.5">(${sortedSlices.length})</span></div>`
+            zoneCity.push(
+              `<div class="tt-toggle" style="padding-inline-start:24px;cursor:pointer">` +
+              `<span class="tt-arrow" style="display:inline-block;width:10px;font-size:9px">${collapsedArrow()}</span>` +
+              `<bdi>${cityName}</bdi> <span style="opacity:0.5">(${sortedSlices.length})</span></div>` +
+              `<div class="tt-content" style="display:none">` +
+              sortedSlices.map((slice) => {
+                const startStr = timeFmt(slice._start);
+                const endStr = slice._end ? " \u2013 " + timeFmt(slice._end) : "";
+                return `<div style="padding-inline-start:40px;opacity:0.7">${startStr}${endStr}</div>`;
+              }).join("") +
+              `</div>`
             );
-            parts.push(`<div id="${cityId}" style="display:none">`);
-            for (const slice of sortedSlices) {
-              const startStr = timeFmt(slice._start);
-              const endStr = slice._end ? " \u2013 " + timeFmt(slice._end) : "";
-              parts.push(`<div style="padding-left:40px;opacity:0.7">${startStr}${endStr}</div>`);
-            }
-            parts.push(`</div>`);
           }
         }
 
-        parts.push(`</div>`);
+        parts.push(
+          `<div>` +
+          `<div class="tt-toggle" style="padding-inline-start:8px;cursor:pointer;opacity:0.85;margin-top:2px">` +
+          `<span class="tt-arrow" style="display:inline-block;width:10px;font-size:9px">${collapsedArrow()}</span>` +
+          `<bdi>${zoneName}</bdi> <span style="opacity:0.5">(${cityCount})</span></div>` +
+          `<div class="tt-content" style="display:none;border-inline-start:2px solid rgba(255,255,255,0.15);margin-inline-start:14px">${zoneCity.join("")}</div>` +
+          `</div>`
+        );
       }
     }
 

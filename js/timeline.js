@@ -214,7 +214,7 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
       const threatLabel = t(threatI18nKeys[slice.threat_type]);
       const startStr = timeFmt(slice._start);
       const endStr = slice._end ? " \u2013 " + timeFmt(slice._end) : "";
-      return `<strong><bdi>${cityName}</bdi></strong><br>${threatLabel}<br>${startStr}${endStr}`;
+      return `<strong><bdi>${cityName}</bdi></strong><br>${threatLabel}<br><span dir="ltr">${startStr}${endStr}</span>`;
     }
 
     // Deduplicate slices by city + start time
@@ -275,7 +275,7 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
         const cityName = lang === "he" ? (slice.NAME_HE || slice.data) : (slice.NAME_EN || slice.data);
         const startStr = timeFmt(slice._start);
         const endStr = slice._end ? " \u2013 " + timeFmt(slice._end) : "";
-        parts.push(`<div style="padding-inline-start:12px"><bdi>${cityName}</bdi> <span style="opacity:0.6">${startStr}${endStr}</span></div>`);
+        parts.push(`<div style="padding-inline-start:12px"><bdi>${cityName}</bdi> <span dir="ltr" style="opacity:0.6">${startStr}${endStr}</span></div>`);
       }
     }
     return parts.join("");
@@ -325,7 +325,7 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
             const slice = sortedSlices[0];
             const startStr = timeFmt(slice._start);
             const endStr = slice._end ? " \u2013 " + timeFmt(slice._end) : "";
-            zoneCity.push(`<div style="padding-inline-start:24px"><bdi>${cityName}</bdi> <span style="opacity:0.6">${startStr}${endStr}</span></div>`);
+            zoneCity.push(`<div style="padding-inline-start:24px"><bdi>${cityName}</bdi> <span dir="ltr" style="opacity:0.6">${startStr}${endStr}</span></div>`);
           } else {
             zoneCity.push(
               `<div class="tt-toggle" style="padding-inline-start:24px;cursor:pointer">` +
@@ -335,7 +335,7 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
               sortedSlices.map((slice) => {
                 const startStr = timeFmt(slice._start);
                 const endStr = slice._end ? " \u2013 " + timeFmt(slice._end) : "";
-                return `<div style="padding-inline-start:40px;opacity:0.7">${startStr}${endStr}</div>`;
+                return `<div dir="ltr" style="padding-inline-start:40px;opacity:0.7">${startStr}${endStr}</div>`;
               }).join("") +
               `</div>`
             );

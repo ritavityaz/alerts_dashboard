@@ -12,7 +12,8 @@ html {
   filter: brightness(1.4);
 }
 
-/* Dual range slider */
+/* ── Dual range slider ── */
+
 .range-slider {
   position: relative;
   height: 20px;
@@ -63,8 +64,8 @@ html {
 .range-track {
   position: absolute;
   top: 8px;
-  left: 7px;
-  right: 7px;
+  inset-inline-start: 7px;
+  inset-inline-end: 7px;
   height: 4px;
   border-radius: 2px;
   background: #1e293b;
@@ -73,42 +74,232 @@ html {
 .range-highlight {
   position: absolute;
   top: 8px;
-  left: 7px;
+  inset-inline-start: 7px;
   height: 4px;
   border-radius: 2px;
   background: #6366f1;
 }
 
+/* ── Tooltip ── */
+
 .tooltip {
   @apply absolute pointer-events-none bg-black/90 text-white text-xs leading-relaxed px-3 py-2 rounded hidden z-50 max-w-[320px] max-h-[400px] overflow-y-auto;
 }
 
+/* Mobile: tooltip becomes a fixed bottom bar */
+.tooltip-bottom-bar {
+  @apply fixed inset-x-0 bottom-0 z-50 bg-black/95 text-white text-sm px-4 py-3 max-h-[40vh] overflow-y-auto;
+  pointer-events: auto;
+}
 
-/* Charts and slider should always be LTR to prevent RTL from flipping layout */
+/* ── Chart containers always LTR (axes, labels, data) ── */
+
 #legend,
 #slider-section,
 #timeline-container,
-#heatmap-container {
+#heatmap-container,
+#duration-chart,
+#daily-alerts-chart,
+#daily-shelter-chart {
   direction: ltr;
 }
 
-/* Time/duration values should always be LTR */
-#stats-section .font-bold,
-#stats-section [data-field] {
+/* Time/duration values always LTR */
+[data-field="dur"],
+[data-field="range"] {
   direction: ltr;
   text-align: start;
 }
 
-/* RTL overrides */
-[dir="rtl"] .float-right {
-  float: left;
+/* ── Filter chips ── */
+
+.filter-chip {
+  @apply inline-flex items-center gap-1 px-3 py-1 rounded-full border border-gray-700 bg-gray-800 text-gray-400 whitespace-nowrap cursor-pointer transition-colors;
 }
 
-[dir="rtl"] #lang-toggle {
-  flex-direction: row-reverse;
+.filter-chip:hover {
+  @apply bg-gray-700 text-gray-200;
 }
 
-[dir="rtl"] #context-toggle {
-  margin-left: 0;
-  margin-right: auto;
+.filter-chip.active {
+  @apply bg-indigo-600/20 border-indigo-500/50 text-indigo-300;
+}
+
+.filter-chip-time .chip-label {
+  unicode-bidi: plaintext;
+}
+
+.filter-chip-reset {
+  @apply border-red-800/50 text-red-400/80;
+}
+
+.filter-chip-reset:hover {
+  @apply bg-red-900/30 text-red-300;
+}
+
+.chip-arrow {
+  @apply shrink-0 opacity-60;
+}
+
+/* Hide scrollbar on chip bar */
+#filter-chips {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+#filter-chips::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Context toggle buttons ── */
+
+#context-toggle {
+  @apply rounded-lg overflow-hidden shadow-lg;
+}
+
+.ctx-btn {
+  @apply px-3 py-1.5 border border-gray-700 text-xs cursor-pointer transition-colors whitespace-nowrap;
+}
+
+.ctx-btn:first-child {
+  @apply rounded-s-lg;
+}
+
+.ctx-btn:last-child {
+  @apply rounded-e-lg;
+}
+
+.ctx-btn:hover {
+  @apply bg-gray-700 text-gray-200;
+}
+
+.ctx-btn.active {
+  @apply bg-indigo-600 text-white border-indigo-600;
+}
+
+/* ── Chip dropdowns (desktop only) ── */
+
+.chip-dropdown {
+  @apply fixed z-50 bg-gray-800 border border-gray-700 rounded-lg shadow-xl;
+  min-width: 160px;
+  max-width: min(320px, calc(100vw - 16px));
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* Searchable dropdowns: search stays pinned, list scrolls */
+#dropdown-city,
+#dropdown-zone {
+  overflow: hidden;
+}
+
+.chip-dropdown.hidden {
+  display: none;
+}
+
+.chip-dropdown-item {
+  @apply w-full text-start px-3 py-2 text-sm text-gray-300 cursor-pointer transition-colors;
+}
+
+.chip-dropdown-item:hover {
+  @apply bg-gray-700 text-white;
+}
+
+.chip-dropdown-item.selected {
+  @apply bg-indigo-600/20 text-indigo-300;
+}
+
+.chip-dropdown-search {
+  @apply w-full px-3 py-1.5 bg-gray-900 text-gray-200 text-sm border-b border-gray-700 outline-none;
+  flex-shrink: 0;
+}
+
+.chip-dropdown-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.chip-dropdown-list li {
+  @apply px-3 py-2 cursor-pointer text-sm text-gray-300 transition-colors;
+}
+
+.chip-dropdown-list li:hover {
+  @apply bg-gray-700 text-white;
+}
+
+.chip-dropdown-list li.selected {
+  @apply bg-indigo-600/20 text-indigo-300;
+}
+
+/* ── Time range dropdown ── */
+
+.time-preset {
+  @apply px-2 py-1 rounded-full border border-gray-700 bg-gray-900 text-gray-400 text-xs cursor-pointer transition-colors;
+  min-height: unset;
+  min-width: unset;
+}
+
+.time-preset:hover {
+  @apply bg-gray-700 text-gray-200;
+}
+
+.time-preset.active {
+  @apply bg-indigo-600 text-white border-indigo-600;
+}
+
+.time-input {
+  @apply w-full mt-1 px-2 py-1.5 rounded border border-gray-700 bg-gray-900 text-gray-200 text-sm;
+  color-scheme: dark;
+}
+
+/* ── Filter bottom sheet (mobile) ── */
+
+.bottom-sheet-backdrop {
+  @apply fixed inset-0 z-40 bg-black/50;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.bottom-sheet-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.bottom-sheet {
+  @apply fixed inset-x-0 bottom-0 z-50 bg-gray-900 rounded-t-2xl;
+  transform: translateY(100%);
+  transition: transform 0.3s ease;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.bottom-sheet.open {
+  transform: translateY(0);
+}
+
+.bottom-sheet-handle {
+  @apply w-10 h-1 bg-gray-600 rounded-full mx-auto mt-3 mb-2;
+}
+
+/* ── Tap targets: 44px minimum on mobile ── */
+
+@media (max-width: 639px) {
+  button, [role="button"], select, .tap-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Filter chips: tall enough for tap but no min-width (text determines width) */
+  .filter-chip {
+    min-height: 36px;
+    min-width: unset;
+  }
+
+  .ctx-btn {
+    min-height: 36px;
+    min-width: 44px;
+  }
 }

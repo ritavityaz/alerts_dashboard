@@ -1,0 +1,93 @@
+{
+  "header": {
+    "title": "Operation Sleepy Lion",
+    "totalSuffix": "total alerts",
+    "navMap": "Map",
+    "navTimeline": "Timeline",
+    "navStats": "Stats",
+    "navAbout": "About"
+  },
+  "filters": {
+    "allThreats": "All threats",
+    "missiles": "Missiles",
+    "drones": "Drones",
+    "infiltrations": "Infiltrations",
+    "cityPlaceholder": "City...",
+    "allZones": "All zones",
+    "country": "Country",
+    "zone": "Zone",
+    "city": "City",
+    "reset": "Reset",
+    "from": "From",
+    "to": "To"
+  },
+  "map": {
+    "alerts": "alerts"
+  },
+  "stats": {
+    "totalAlerts": "Total Alerts",
+    "citiesAffected": "Cities Affected",
+    "peakDay": "Peak Day",
+    "alertsByThreat": "Alerts by Threat",
+    "missiles": "Missiles",
+    "drones": "Drones",
+    "infiltrations": "Infiltrations",
+    "alerts": "alerts",
+    "cities": "cities"
+  },
+  "slider": {
+    "yesterday": "Yesterday",
+    "today": "Today",
+    "past3days": "3 days",
+    "past7days": "7 days",
+    "sinceStart": "All time"
+  },
+  "timeline": {
+    "title": "Alert Timeline",
+    "missiles": "Missiles",
+    "drones": "Drones",
+    "terrorists": "Infiltrations",
+    "infiltration": "Infiltrations",
+    "allPrefix": "All",
+    "missilePrefix": "Missile",
+    "dronePrefix": "Drone",
+    "infiltrationPrefix": "Infiltration",
+    "alertsSuffix": "Alerts",
+    "inWord": "in",
+    "alerts": "alerts",
+    "cities": "cities"
+  },
+  "quietPeriods": {
+    "longestQuiet": "Longest Quiet",
+    "quietestHour": "Quietest Hours",
+    "today": "Today",
+    "past3days": "3 days",
+    "past7days": "7 days",
+    "sinceStart": "All time"
+  },
+  "heatmap": {
+    "title": "Avg. Peak Hours",
+    "past3days": "Past 3 days",
+    "past7days": "Past 7 days",
+    "sinceStart": "All time",
+    "weighted": "weighted"
+  },
+  "charts": {
+    "durationByZone": "Alert Duration by Zone",
+    "dailyBreakdown": "Daily Breakdown",
+    "alertsPerDay": "Alerts per Day",
+    "shelterPerDay": "Time in Shelter per Day"
+  },
+  "about": {
+    "title": "About",
+    "whatTitle": "What is this?",
+    "whatText": "Missiles. Drones. Bombing. Trauma. No sleep. Nervous. Eat too much. Sad.\n\nSolution? Sleepy Lion will not help you. Must exercise. Take antidepressants. Stay sheltered.\n\nBut at least you'll be able to quantify your suffering.\n\nSleepy Lion will show you how many times your sleep was interrupted, so you can prove to your boss you're not lazy, just tired. And you can estimate the best times to take a shower without having to run naked to the MAMAD and scare the kids.\n\nYMMV.\n\nStay safe, sleep tight, don't let the vibecode bugs bite.\n\nPS: translation not available in Farsi for obvious reasons.",
+    "dataTitle": "Data Sources",
+    "dataText": "Alert data comes from an undocumented API quietly sitting behind oref.org.il/heb/alerts-history. It's not advertised, but it's not hidden either. (Dear Pikud HaOref: please fix filtering by date. Sincerely, everyone.)\n\nZone polygons were borrowed from <a href=\"https://github.com/eladnava/pikud-haoref-api\" target=\"_blank\" class=\"text-indigo-400 hover:text-indigo-300 underline\">eladnava/pikud-haoref-api</a>, who borrowed them from someone else, who probably borrowed them from someone else.",
+    "howTitle": "How to Use",
+    "howText": "Use the map to explore alert density across Israel. Click a city or zone to drill down.\n\nFilter by threat type using the dropdown.\n\nThe time slider lets you narrow the date range — use the arrow buttons to step through days or hours.\n\nThe timeline shows alerts by time of day, and the heatmap highlights recurring peak hours."
+  },
+  "footer": {
+    "disclaimer": "For informational purposes only. Not affiliated with anyone."
+  }
+}

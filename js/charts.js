@@ -1,6 +1,9 @@
 import * as d3 from "d3";
-import { t } from "./i18n.js";
+import { t, formatNumber } from "./i18n.js";
 import { showTooltip, hideTooltip } from "./tooltip.js";
+import { onSignal } from "./queries.js";
+import * as store from "./store.js";
+import { queryEventsByCityInZone } from "./db.js";
 
 const threatColors = {
   "1": "#ef4444",   // missiles
@@ -9,9 +12,9 @@ const threatColors = {
 };
 
 const threatI18nKeys = {
-  "1": "missiles",
-  "2": "drones",
-  "10": "infiltrations",
+  "1": "timeline.missiles",
+  "2": "timeline.drones",
+  "10": "timeline.infiltration",
 };
 
 const CATEGORIES = ["1", "2", "10"];
@@ -105,13 +108,139 @@ function fmtDurationShort(minutes) {
 }
 
 /**
+ * Daily histogram — vertical bars, one per day.
+ * @param {HTMLElement} container
+ * @param {object} opts
+ * @param {string} opts.yLabel - axis label
+ * @param {function} opts.yFormat - tick formatter for y axis
+ * @param {string} opts.color - bar fill color
+ * @param {function} opts.tooltipFmt - (d) => tooltip HTML
+ */
+export function createDailyHistogram(container, { yFormat, tooltipFmt, signalName = null, mapData = null }) {
+  const margin = { top: 8, right: 12, bottom: 32, left: 48 };
+  const cats = CATEGORIES; // ["1", "2", "10"]
+
+  const svg = d3.select(container).append("svg").style("width", "100%");
+  const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+  const xAxisG = g.append("g");
+  const yAxisG = g.append("g");
+  const barsG = g.append("g");
+  // Invisible hit rects on top for tooltips
+  const hitG = g.append("g");
+
+  function update(data) {
+    // data: [{day_ms, byCategory: {"1": n, "2": n, "10": n}}]
+    if (!data || data.length === 0) {
+      svg.attr("height", 0);
+      return;
+    }
+
+    // Fill gaps so every day in the range has a bar
+    const byDay = new Map(data.map((d) => [d.day_ms, d.byCategory]));
+    const minDay = data[0].day_ms;
+    const maxDay = data[data.length - 1].day_ms;
+    const filled = [];
+    for (let d = minDay; d <= maxDay; d += 86400000) {
+      filled.push({ day_ms: d, byCategory: byDay.get(d) || {} });
+    }
+    data = filled;
+
+    // Compute totals and stacked segments per day
+    for (const d of data) {
+      d.total = cats.reduce((sum, cat) => sum + (d.byCategory[cat] || 0), 0);
+      let y0 = 0;
+      d.segments = cats.map((cat) => {
+        const val = d.byCategory[cat] || 0;
+        const seg = { cat, value: val, y0, y1: y0 + val, day_ms: d.day_ms };
+        y0 += val;
+        return seg;
+      }).filter((s) => s.value > 0);
+    }
+
+    const w = container.clientWidth || 300;
+    const height = 200;
+    const innerW = w - margin.left - margin.right;
+    const innerH = height - margin.top - margin.bottom;
+
+    svg.attr("width", w).attr("height", height);
+
+    const x = d3.scaleBand()
+      .domain(data.map((d) => d.day_ms))
+      .range([0, innerW])
+      .padding(0.15);
+
+    const y = d3.scaleLinear()
+      .domain([0, d3.max(data, (d) => d.total) || 1])
+      .range([innerH, 0])
+      .nice();
+
+    const dayFmt = d3.timeFormat("%-d/%m");
+
+    // X axis — show ~8-12 labels max
+    const tickEvery = Math.max(1, Math.floor(data.length / 10));
+    const tickValues = data.filter((_, i) => i % tickEvery === 0).map((d) => d.day_ms);
+
+    xAxisG
+      .attr("transform", `translate(0,${innerH})`)
+      .call(d3.axisBottom(x).tickValues(tickValues).tickFormat((d) => dayFmt(new Date(d))).tickSize(0))
+      .call((g) => g.select(".domain").attr("stroke", "#334155"))
+      .call((g) => g.selectAll(".tick text").attr("fill", "#64748b").attr("font-size", "9px")
+        .attr("text-anchor", "end").attr("transform", "rotate(-40)").attr("dx", "-4").attr("dy", "4"));
+
+    yAxisG
+      .call(d3.axisLeft(y).ticks(5).tickFormat(yFormat || d3.format(",")).tickSize(-innerW))
+      .call((g) => g.select(".domain").remove())
+      .call((g) => g.selectAll(".tick line").attr("stroke", "#1e293b"))
+      .call((g) => g.selectAll(".tick text").attr("fill", "#64748b").attr("font-size", "10px"));
+
+    // Stacked segments
+    const allSegs = data.flatMap((d) => d.segments);
+    barsG.selectAll("rect")
+      .data(allSegs, (d) => `${d.day_ms}-${d.cat}`)
+      .join("rect")
+      .attr("x", (d) => x(d.day_ms))
+      .attr("width", x.bandwidth())
+      .attr("y", (d) => y(d.y1))
+      .attr("height", (d) => Math.max(0, y(d.y0) - y(d.y1)))
+      .attr("fill", (d) => threatColors[d.cat] || "#6366f1")
+      .attr("rx", 1);
+
+    // Invisible hit rects for whole-bar tooltips
+    hitG.selectAll("rect")
+      .data(data, (d) => d.day_ms)
+      .join("rect")
+      .attr("x", (d) => x(d.day_ms))
+      .attr("width", x.bandwidth())
+      .attr("y", 0)
+      .attr("height", innerH)
+      .attr("fill", "transparent")
+      .on("mousemove", (event, d) => {
+        showTooltip(event.pageX, event.pageY, tooltipFmt(d));
+      })
+      .on("mouseleave", () => hideTooltip());
+  }
+
+  if (signalName) {
+    onSignal(signalName, (data) => {
+      update(data);
+    });
+  }
+
+  return { update };
+}
+
+/**
  * Stacked horizontal bar chart — zones on Y axis, alert duration on X, stacked by threat.
  * Click a zone row to expand into per-city breakdown.
  * @param {HTMLElement} container
  * @param {function} fetchCityEvents - async (zone) => [{city, category, start_ms, end_ms}, ...]
  * @param {function} displayName - (rawName) => localized display string
  */
-export function createZoneDurationChart(container, fetchCityEvents, displayName) {
+export function createZoneDurationChart(container, { fetchCityEvents = null, displayName = (name) => name } = {}) {
+  // Default fetchCityEvents uses db.js + store directly
+  if (!fetchCityEvents) {
+    fetchCityEvents = (zone) => queryEventsByCityInZone(zone, store.getState().startMs, store.getState().endMs);
+  }
   const margin = { top: 8, right: 72, bottom: 28, left: 140 };
   const zoneRowH = 24;
   const cityRowH = 20;
@@ -255,6 +384,10 @@ export function createZoneDurationChart(container, fetchCityEvents, displayName)
     expanded.clear();
     render(buildDurationStacked(rows, "zone", "cities"));
   }
+
+  onSignal("alertDurationByZone", (durationEvents) => {
+    update(durationEvents);
+  });
 
   return { update };
 }

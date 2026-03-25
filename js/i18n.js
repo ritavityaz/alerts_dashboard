@@ -1,114 +1,95 @@
-const translations = {
-  en: {
-    title: "Operation Sleepy Lion",
-    allThreats: "All threats",
-    missiles: "Missiles",
-    drones: "Drones",
-    infiltrations: "Infiltrations",
-    cityPlaceholder: "City...",
-    allZones: "All zones",
-    country: "Country",
-    zone: "Zone",
-    city: "City",
-    alerts: "alerts",
-    cities: "cities",
-    totalAlerts: "Total Alerts",
-    citiesAffected: "Cities Affected",
-    peakDay: "Peak Day",
-    threats: "Alerts by Threat",
-    allPrefix: "All",
-    missilePrefix: "Missile",
-    dronePrefix: "Drone",
-    infiltrationPrefix: "Infiltration",
-    alertsSuffix: "Alerts",
-    totalSuffix: "total alerts",
-    inWord: "in",
-    timelineMissiles: "Missiles",
-    timelineDrones: "Drones",
-    timelineTerrorists: "Infiltrations",
-    navMap: "Map",
-    navTimeline: "Timeline",
-    navStats: "Stats",
-    alertTimeline: "Alert Timeline",
-    reset: "Reset",
-    longestQuiet: "Longest Quiet",
-    quietestHour: "Quietest Hours",
-    alertHeatmap: "Avg. Peak Hours",
-    yesterday: "Yesterday",
-    today: "Today",
-    past3days: "3 days",
-    past7days: "7 days",
-    sinceStart: "All time",
-    navAbout: "About",
-    aboutTitle: "About",
-    aboutWhat: "What is this?",
-    aboutWhatText: "Missiles. Drones. Bombing. Trauma. No sleep. Nervous. Eat too much. Sad.\n\nSolution? Sleepy Lion will not help you. Must exercise. Take antidepressants. Stay sheltered.\n\nBut at least you'll be able to quantify your suffering.\n\nSleepy Lion will show you how many times your sleep was interrupted, so you can prove to your boss you're not lazy, just tired. And you can estimate the best times to take a shower without having to run naked to the MAMAD and scare the kids.\n\nYMMV.\n\nStay safe, sleep tight, don't let the vibecode bugs bite.\n\nPS: translation not available in Farsi for obvious reasons.",
-    aboutData: "Data Sources",
-    aboutDataText: "Alert data comes from an undocumented API quietly sitting behind oref.org.il/heb/alerts-history. It's not advertised, but it's not hidden either. (Dear Pikud HaOref: please fix filtering by date. Sincerely, everyone.)\n\nZone polygons were borrowed from <a href=\"https://github.com/eladnava/pikud-haoref-api\" target=\"_blank\" class=\"text-indigo-400 hover:text-indigo-300 underline\">eladnava/pikud-haoref-api</a>, who borrowed them from someone else, who probably borrowed them from someone else.",
-    durationByZone: "Alert Duration by Zone",
-    aboutHow: "How to Use",
-    aboutHowText: "Use the map to explore alert density across Israel. Click a city or zone to drill down.\n\nFilter by threat type using the dropdown.\n\nThe time slider lets you narrow the date range — use the arrow buttons to step through days or hours.\n\nThe timeline shows alerts by time of day, and the heatmap highlights recurring peak hours.",
-    footerDisclaimer: "For informational purposes only. Not affiliated with anyone.",
-  },
-  he: {
-    title: "שינת הארי",
-    allThreats: "כל האיומים",
-    missiles: "ירי רקטות וטילים",
-    drones: "חדירת כלי טיס עוין",
-    infiltrations: "חדירת מחבלים",
-    cityPlaceholder: "עיר...",
-    allZones: "כל האזורים",
-    country: "ארץ",
-    zone: "אזור",
-    city: "עיר",
-    alerts: "אזעקות",
-    cities: "ערים",
-    totalAlerts: 'סה"כ אזעקות',
-    citiesAffected: "ערים מושפעות",
-    peakDay: "יום שיא",
-    threats: "אזעקות לפי איום",
-    allPrefix: "כל",
-    missilePrefix: "ירי רקטות וטילים",
-    dronePrefix: "חדירת כלי טיס עוין",
-    infiltrationPrefix: "חדירת מחבלים",
-    alertsSuffix: "אזעקות",
-    totalSuffix: 'אזעקות סה"כ',
-    inWord: "ב",
-    timelineMissiles: "ירי רקטות וטילים",
-    timelineDrones: "חדירת כלי טיס עוין",
-    timelineTerrorists: "חדירת מחבלים",
-    navMap: "מפה",
-    navTimeline: "ציר זמן",
-    navStats: "נתונים",
-    alertTimeline: "ציר זמן אזעקות",
-    reset: "איפוס",
-    longestQuiet: "השקט הארוך ביותר",
-    quietestHour: "השעות השקטות ביותר",
-    alertHeatmap: "שעות שיא ממוצעות",
-    yesterday: "אתמול",
-    today: "היום",
-    past3days: "3 ימים",
-    past7days: "7 ימים",
-    sinceStart: "מתחילת המלחמה",
-    navAbout: "אודות",
-    aboutTitle: "אודות",
-    aboutWhat: "מה זה?",
-    aboutWhatText: "טילים. מל\"טים. הפצצות. טראומה. חוסר שינה. עצבנות. אכילה רגשית.\n\nפתרון?\n\"שינת הארי\" לא תעזור לכם. אתם חייבים להתאמן. קחו נוגדי דיכאון. הישארו במרחב מוגן.\n\nאבל לפחות תוכלו לכמת את הסבל שלכם!\n\n\"שינת הארי\" תראה לכם כמה פעמים השינה שלכם הופרעה במהלך הלילה, כדי שתוכלו להוכיח לבוס שאתם לא עצלנים, פשוט עייפים. בנוסף, תוכלו להעריך את הזמנים הכי מתאימים סטטיסטית למקלחת שלא כרוכה בריצה בעירום חזרה לממ\"ד וטראומה לילדים.\n\n(ט.ל.ח)\n\nנ.ב: תרגום לפרסית לא זמין מסיבות מובנות",
-    aboutData: "מקורות מידע",
-    aboutDataText: "נתוני האזעקות מגיעים מ-API לא מתועד שמסתתר בשקט מאחורי oref.org.il/heb/alerts-history. הוא לא מפורסם, אבל גם לא ממש מוסתר. (פיקוד העורף היקר: בבקשה תתקנו את הסינון לפי תאריך. בכבוד רב, כולם.)\n\nהפוליגונים של האזורים הושאלו מ-<a href=\"https://github.com/eladnava/pikud-haoref-api\" target=\"_blank\" class=\"text-indigo-400 hover:text-indigo-300 underline\">eladnava/pikud-haoref-api</a>, שהשאילו אותם ממישהו אחר, שכנראה השאיל אותם ממישהו אחר.",
-    durationByZone: "משך אזעקות לפי אזור",
-    aboutHow: "איך להשתמש",
-    aboutHowText: "השתמשו במפה כדי לחקור את צפיפות האזעקות ברחבי ישראל. לחצו על עיר או אזור לצלילה לעומק.\n\nסננו לפי סוג איום בתפריט הנפתח.\n\nמחוון הזמן מאפשר לצמצם את טווח התאריכים — השתמשו בכפתורי החצים כדי לדפדף בין ימים או שעות.\n\nציר הזמן מציג אזעקות לפי שעה ביום, ומפת החום מדגישה שעות שיא חוזרות.",
-    footerDisclaimer: "למטרות מידע בלבד. ללא שיוך לאף גורם.",
-  },
-};
+/**
+ * i18n — build-time locale, runtime lookup.
+ *
+ * Language is read from <html lang="..."> (baked by Vite at build time).
+ * Translations are imported statically — no runtime fetch, no DOM walk.
+ */
 
-export let lang = "en";
+import enTranslations from "../locales/en.json";
+import heTranslations from "../locales/he.json";
 
-export function setLang(newLang) {
-  lang = newLang;
+const locales = { en: enTranslations, he: heTranslations };
+
+/**
+ * Current language code, read once from the document root element.
+ */
+export const lang = document.documentElement.lang || "en";
+
+/**
+ * Current text direction.
+ */
+export const dir = lang === "he" ? "rtl" : "ltr";
+
+const translations = locales[lang] || locales.en;
+
+/**
+ * Look up a translation by dot-separated key path.
+ * Example: t("stats.totalAlerts") → "Total Alerts"
+ * Returns the key itself if not found.
+ */
+export function t(keyPath) {
+  const parts = keyPath.split(".");
+  let value = translations;
+  for (const part of parts) {
+    if (value == null || typeof value !== "object") return keyPath;
+    value = value[part];
+  }
+  return value ?? keyPath;
 }
 
-export function t(key) {
-  return translations[lang][key] || key;
+/**
+ * Format a number using the current locale.
+ * Example: formatNumber(12345) → "12,345" (en) or "12,345" (he)
+ */
+const numberFormatter = new Intl.NumberFormat(lang);
+export function formatNumber(number) {
+  return numberFormatter.format(number);
+}
+
+/**
+ * Format a UTC epoch ms as a date string in Israel time.
+ * Example: formatDate(1710504000000) → "Mar 15, 2024" (en)
+ */
+const dateFormatter = new Intl.DateTimeFormat(lang, {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  timeZone: "Asia/Jerusalem",
+});
+export function formatDate(epochMs) {
+  return dateFormatter.format(new Date(epochMs));
+}
+
+/**
+ * Format a UTC epoch ms as a short date+time string in Israel time.
+ * Example: formatDateTime(1710504000000) → "Mar 15, 14:00" (en)
+ */
+const dateTimeFormatter = new Intl.DateTimeFormat(lang, {
+  day: "2-digit",
+  month: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+  timeZone: "Asia/Jerusalem",
+});
+export function formatDateTime(epochMs) {
+  return dateTimeFormatter.format(new Date(epochMs));
+}
+
+/**
+ * Format a UTC epoch ms range as a single date-time range string in Israel time.
+ * Uses Intl.DateTimeFormat.formatRange for proper bidi and locale handling.
+ * Example: formatDateTimeRange(start, end) → "Mar 15, 14:00 – Mar 20, 08:00" (en)
+ */
+export function formatDateTimeRange(startMs, endMs) {
+  return dateTimeFormatter.formatRange(new Date(startMs), new Date(endMs));
+}
+
+/**
+ * Build the URL path for the other language, preserving current query params.
+ * Example: (on /en/?threat=1) → "/he/?threat=1"
+ */
+export function otherLangHref() {
+  const otherLang = lang === "he" ? "en" : "he";
+  return `/${otherLang}/${window.location.search}`;
 }

@@ -1,7 +1,10 @@
+import { isMobile } from "./framework.js";
+
 const tooltip = document.getElementById("tooltip");
 const MARGIN = 8;
 let pinned = false;
 let onUnpinCallback = null;
+let bottomBarMode = false;
 
 export function setOnUnpin(callback) {
   onUnpinCallback = callback;
@@ -10,24 +13,37 @@ export function setOnUnpin(callback) {
 export function showTooltip(pageX, pageY, html) {
   if (pinned) return;
   tooltip.innerHTML = html;
+
+  // Mobile: show as bottom bar
+  if (isMobile()) {
+    tooltip.className = "tooltip-bottom-bar";
+    tooltip.style.display = "block";
+    tooltip.style.left = "";
+    tooltip.style.top = "";
+    bottomBarMode = true;
+    return;
+  }
+
+  bottomBarMode = false;
+  tooltip.className = "tooltip";
   tooltip.style.display = "block";
 
   const rect = tooltip.getBoundingClientRect();
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
 
   let left = pageX + 12;
   let top = pageY - 12;
 
   // Flip left if overflowing right
-  if (left + rect.width > vw - MARGIN) {
+  if (left + rect.width > viewportWidth - MARGIN) {
     left = pageX - rect.width - 12;
   }
   // Clamp left
   if (left < MARGIN) left = MARGIN;
 
   // Flip up if overflowing bottom
-  if (top + rect.height > window.scrollY + vh - MARGIN) {
+  if (top + rect.height > window.scrollY + viewportHeight - MARGIN) {
     top = pageY - rect.height - 12;
   }
   // Clamp top
@@ -48,28 +64,36 @@ export function pinTooltip() {
 
   const closeBtn = document.createElement("span");
   closeBtn.textContent = "\u00d7";
-  closeBtn.style.cssText = "position:absolute;top:2px;right:6px;cursor:pointer;font-size:14px;line-height:1;opacity:0.6";
+  closeBtn.style.cssText = "position:absolute;top:2px;inset-inline-end:6px;cursor:pointer;font-size:14px;line-height:1;opacity:0.6";
   closeBtn.addEventListener("mouseenter", () => { closeBtn.style.opacity = "1"; });
   closeBtn.addEventListener("mouseleave", () => { closeBtn.style.opacity = "0.6"; });
   closeBtn.addEventListener("click", (event) => {
     event.stopPropagation();
     unpinTooltip();
   });
-  tooltip.style.paddingRight = "20px";
+  tooltip.style.paddingInlineEnd = "20px";
   tooltip.appendChild(closeBtn);
 }
 
 export function unpinTooltip({ silent = false } = {}) {
   pinned = false;
   tooltip.style.pointerEvents = "none";
-  tooltip.style.paddingRight = "";
+  tooltip.style.paddingInlineEnd = "";
   tooltip.style.display = "none";
+  tooltip.className = "tooltip";
   if (!silent && onUnpinCallback) onUnpinCallback();
 }
 
 export function isTooltipPinned() {
   return pinned;
 }
+
+// Tap outside bottom-bar tooltip to dismiss on mobile
+document.addEventListener("click", (event) => {
+  if (bottomBarMode && !tooltip.contains(event.target)) {
+    hideTooltip();
+  }
+});
 
 // Delegated click handler for collapsible sections inside the tooltip
 tooltip.addEventListener("click", (event) => {

@@ -3,7 +3,9 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "VITE_LOCALE=en vite build && VITE_LOCALE=he vite build",
+    "build:en": "VITE_LOCALE=en vite build",
+    "build:he": "VITE_LOCALE=he vite build",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -12,9 +14,7 @@
     "d3": "^7",
     "d3-tile": "^1.0.0",
     "maplibre-gl": "^5.19.0",
-    "tailwindcss": "^4.2.1",
-    "topojson-client": "^3.1.0",
-    "topojson-server": "^3.0.1"
+    "tailwindcss": "^4.2.1"
   },
   "devDependencies": {
     "vite": "^6"

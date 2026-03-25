@@ -19,9 +19,10 @@ const _enginePromise = (async () => {
 /**
  * Load parquet files directly into DuckDB tables.
  * @param {ArrayBuffer} alertsBuf - alerts.parquet bytes
- * @param {ArrayBuffer} eventsBuf - events.parquet bytes
+ * @param {ArrayBuffer} incidentsBuf - incidents.parquet bytes
+ * @param {ArrayBuffer} incidentEventsBuf - incident_events.parquet bytes
  */
-export async function initDB(alertsBuf, eventsBuf) {
+export async function initDB(alertsBuf, incidentsBuf, incidentEventsBuf) {
   console.time("duckdb:engine");
   db = await _enginePromise;
   console.timeEnd("duckdb:engine");
@@ -35,10 +36,15 @@ export async function initDB(alertsBuf, eventsBuf) {
   await conn.query(`CREATE TABLE alerts AS SELECT * FROM read_parquet('alerts.parquet')`);
   console.timeEnd("duckdb:alerts-table");
 
-  console.time("duckdb:events-table");
-  await db.registerFileBuffer("events.parquet", new Uint8Array(eventsBuf));
-  await conn.query(`CREATE TABLE events AS SELECT * FROM read_parquet('events.parquet')`);
-  console.timeEnd("duckdb:events-table");
+  console.time("duckdb:incidents-table");
+  await db.registerFileBuffer("incidents.parquet", new Uint8Array(incidentsBuf));
+  await conn.query(`CREATE TABLE incidents AS SELECT * FROM read_parquet('incidents.parquet')`);
+  console.timeEnd("duckdb:incidents-table");
+
+  console.time("duckdb:incident-events-table");
+  await db.registerFileBuffer("incident_events.parquet", new Uint8Array(incidentEventsBuf));
+  await conn.query(`CREATE TABLE incident_events AS SELECT * FROM read_parquet('incident_events.parquet')`);
+  console.timeEnd("duckdb:incident-events-table");
 }
 
 /**
@@ -69,12 +75,12 @@ export async function queryInitialStats() {
 /** Build a WHERE clause for the common filter pattern */
 function filterWhere(table, { threat, ctx, zone, city, startMs, endMs } = {}) {
   const clauses = [];
-  if (startMs != null && endMs != null) {
-    clauses.push(`ts >= ${startMs} AND ts <= ${endMs}`);
-  }
+  const tsCol = table === "incidents" ? "start_ms" : "ts";
+  if (startMs != null) clauses.push(`${tsCol} >= ${startMs}`);
+  if (endMs != null) clauses.push(`${tsCol} <= ${endMs}`);
   if (threat && threat !== "all") {
-    const col = table === "events" ? "threat_type" : "category";
-    const val = table === "events" ? threatForCategory(threat) : threat;
+    const col = table === "incidents" ? "threat_type" : "category";
+    const val = table === "incidents" ? threatForCategory(threat) : threat;
     clauses.push(`${col} = '${val}'`);
   }
   if (ctx === "zone" && zone && zone !== "all") {
@@ -85,7 +91,7 @@ function filterWhere(table, { threat, ctx, zone, city, startMs, endMs } = {}) {
   return clauses.length > 0 ? "WHERE " + clauses.join(" AND ") : "";
 }
 
-const THREAT_MAP = { "1": "missiles", "2": "drones", "10": "terrorists" };
+const THREAT_MAP = { "1": "missiles", "2": "drones", "10": "infiltration" };
 function threatForCategory(cat) {
   return THREAT_MAP[cat] || cat;
 }
@@ -198,8 +204,8 @@ export async function querySparkline(threat, ctx, zone, city) {
 }
 
 /**
- * Get filtered timeline events (for timeline rendering, quiet periods, heatmap).
- * Returns array of plain objects matching the matched[] shape.
+ * Get filtered incidents (for timeline rendering, quiet periods, heatmap).
+ * Returns array of plain objects with proper UTC Dates.
  */
 export async function queryFilteredEvents(threat, ctx, zone, city) {
   const clauses = [];
@@ -214,17 +220,10 @@ export async function queryFilteredEvents(threat, ctx, zone, city) {
   const where = clauses.length > 0 ? "WHERE " + clauses.join(" AND ") : "";
 
   const result = await conn.query(`
-    SELECT data, threat_type, start_ms, end_ms, zone_en, name_en
-    FROM events ${where}
+    SELECT data, threat_type, start_ms, end_ms, zone_en, name_en,
+           pattern, n_events, group_id, duration_min
+    FROM incidents ${where}
   `);
-
-  // Events store Israel wall-clock ms as if UTC. Shift by browser TZ offset
-  // so Date local fields (.getHours() etc.) show Israel time for d3.
-  // Use each date's own offset to handle DST transitions correctly.
-  function toFakeLocal(ms) {
-    const d = new Date(ms);
-    return new Date(ms + d.getTimezoneOffset() * 60000);
-  }
 
   const rows = [];
   const dataCol = result.getChild("data");
@@ -233,16 +232,23 @@ export async function queryFilteredEvents(threat, ctx, zone, city) {
   const eCol = result.getChild("end_ms");
   const enCol = result.getChild("name_en");
   const zoneCol = result.getChild("zone_en");
+  const patCol = result.getChild("pattern");
+  const neCol = result.getChild("n_events");
+  const gidCol = result.getChild("group_id");
+  const durCol = result.getChild("duration_min");
   for (let i = 0; i < result.numRows; i++) {
-    const endMs = eCol.get(i);
     rows.push({
       data: dataCol.get(i),
       threat_type: ttCol.get(i),
-      _start: toFakeLocal(Number(sCol.get(i))),
-      _end: endMs != null ? toFakeLocal(Number(endMs)) : null,
+      _start: new Date(Number(sCol.get(i))),
+      _end: new Date(Number(eCol.get(i))),
       NAME_HE: dataCol.get(i),
       NAME_EN: enCol.get(i) || dataCol.get(i),
       zone_en: zoneCol.get(i) || "",
+      pattern: patCol.get(i),
+      n_events: Number(neCol.get(i)),
+      group_id: Number(gidCol.get(i)),
+      duration_min: Number(durCol.get(i)),
     });
   }
   return rows;
@@ -254,14 +260,13 @@ export async function queryFilteredEvents(threat, ctx, zone, city) {
  */
 export async function queryEventsByZone(startMs, endMs) {
   const clauses = ["zone_en != ''"];
-  if (startMs != null && endMs != null) {
-    clauses.push(`start_ms <= ${endMs} AND end_ms >= ${startMs}`);
-  }
+  if (startMs != null) clauses.push(`end_ms >= ${startMs}`);
+  if (endMs != null) clauses.push(`start_ms <= ${endMs}`);
   const where = "WHERE " + clauses.join(" AND ");
 
   const result = await conn.query(`
     WITH filtered AS (
-      SELECT * FROM events ${where} AND end_ms IS NOT NULL
+      SELECT * FROM incidents ${where}
     ),
     zone_cities AS (
       SELECT zone_en, COUNT(DISTINCT data) as cities
@@ -278,7 +283,7 @@ export async function queryEventsByZone(startMs, endMs) {
     ORDER BY zd.raw_total DESC, f.zone_en, f.start_ms
   `);
 
-  const CATEGORY_MAP = { missiles: "1", drones: "2", terrorists: "10" };
+  const CATEGORY_MAP = { missiles: "1", drones: "2", infiltration: "10" };
   return result.toArray().map((r) => ({
     zone: r.zone_en,
     category: CATEGORY_MAP[r.threat_type] || r.threat_type,
@@ -292,16 +297,118 @@ export async function queryEventsByZone(startMs, endMs) {
  * Get events for cities within a zone, for computing alert duration per city.
  * Returns array of {city, category, start_ms, end_ms}.
  */
-export async function queryEventsByCityInZone(zone, startMs, endMs) {
-  const clauses = [`zone_en = '${escapeSql(zone)}'`, "end_ms IS NOT NULL"];
-  if (startMs != null && endMs != null) {
-    clauses.push(`start_ms <= ${endMs} AND end_ms >= ${startMs}`);
+/**
+ * Get daily alert counts (number of alerts per day).
+ * Returns array of {day_ms, count}.
+ */
+export async function queryDailyAlertCounts(startMs, endMs, ctx, zone, city) {
+  const where = filterWhere("alerts", { ctx, zone, city, startMs, endMs });
+
+  const result = await conn.query(`
+    SELECT (ts / 86400000) as day_key, category, SUM(count) as cnt
+    FROM alerts ${where}
+    GROUP BY day_key, category ORDER BY day_key
+  `);
+
+  const dayCol = result.getChild("day_key");
+  const catCol = result.getChild("category");
+  const cntCol = result.getChild("cnt");
+  // byDay: Map<day_ms, Map<category, count>>
+  const byDay = new Map();
+  for (let i = 0; i < result.numRows; i++) {
+    const day_ms = Math.floor(Number(dayCol.get(i))) * 86400000;
+    const cat = String(catCol.get(i));
+    if (!byDay.has(day_ms)) byDay.set(day_ms, new Map());
+    const catMap = byDay.get(day_ms);
+    catMap.set(cat, (catMap.get(cat) || 0) + Number(cntCol.get(i)));
   }
+  return [...byDay.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([day_ms, catMap]) => ({ day_ms, byCategory: Object.fromEntries(catMap) }));
+}
+
+/**
+ * Get daily shelter duration in minutes (merged intervals per day).
+ * Returns array of {day_ms, minutes}.
+ */
+export async function queryDailyShelterDuration(startMs, endMs, ctx, zone, city) {
+  const clauses = [];
+  if (startMs != null) clauses.push(`end_ms >= ${startMs}`);
+  if (endMs != null) clauses.push(`start_ms <= ${endMs}`);
+  if (ctx === "zone" && zone && zone !== "all") {
+    clauses.push(`zone_en = '${escapeSql(zone)}'`);
+  } else if (ctx === "city" && city) {
+    clauses.push(`data = '${escapeSql(city)}'`);
+  }
+  const where = clauses.length > 0 ? "WHERE " + clauses.join(" AND ") : "";
+
+  const CATEGORY_MAP = { missiles: "1", drones: "2", infiltration: "10" };
+
+  // Get all incidents with threat type, we'll merge intervals per day+category in JS
+  const result = await conn.query(`
+    SELECT start_ms, end_ms, threat_type FROM incidents ${where} ORDER BY start_ms
+  `);
+
+  const sCol = result.getChild("start_ms");
+  const eCol = result.getChild("end_ms");
+  const tCol = result.getChild("threat_type");
+
+  // Group intervals by day+category
+  // dayMap: Map<day_ms, Map<category, [[start, end], ...]>>
+  const dayMap = new Map();
+  for (let i = 0; i < result.numRows; i++) {
+    const s = Number(sCol.get(i));
+    const e = Number(eCol.get(i));
+    const cat = CATEGORY_MAP[tCol.get(i)] || String(tCol.get(i));
+    const dayStart = Math.floor(s / 86400000) * 86400000;
+    const dayEnd = Math.floor(e / 86400000) * 86400000;
+    for (let d = dayStart; d <= dayEnd; d += 86400000) {
+      const clipS = Math.max(s, d);
+      const clipE = Math.min(e, d + 86400000);
+      if (clipE <= clipS) continue;
+      if (!dayMap.has(d)) dayMap.set(d, new Map());
+      const catMap = dayMap.get(d);
+      if (!catMap.has(cat)) catMap.set(cat, []);
+      catMap.get(cat).push([clipS, clipE]);
+    }
+  }
+
+  // Merge overlapping intervals per day+category and compute duration
+  function mergeAndSum(intervals) {
+    intervals.sort((a, b) => a[0] - b[0]);
+    const merged = [intervals[0].slice()];
+    for (let i = 1; i < intervals.length; i++) {
+      const last = merged[merged.length - 1];
+      if (intervals[i][0] <= last[1]) {
+        last[1] = Math.max(last[1], intervals[i][1]);
+      } else {
+        merged.push(intervals[i].slice());
+      }
+    }
+    return merged.reduce((sum, [a, b]) => sum + (b - a), 0);
+  }
+
+  const rows = [];
+  for (const [day_ms, catMap] of [...dayMap.entries()].sort((a, b) => a[0] - b[0])) {
+    const byCategory = {};
+    for (const [cat, intervals] of catMap) {
+      const minutes = Math.round(mergeAndSum(intervals) / 60000);
+      if (minutes > 0) byCategory[cat] = minutes;
+    }
+    rows.push({ day_ms, byCategory });
+  }
+  return rows;
+}
+
+export async function queryEventsByCityInZone(zone, startMs, endMs) {
+  const clauses = [`zone_en = '${escapeSql(zone)}'`];
+  if (startMs != null) clauses.push(`end_ms >= ${startMs}`);
+  if (endMs != null) clauses.push(`start_ms <= ${endMs}`);
   const where = "WHERE " + clauses.join(" AND ");
 
   const result = await conn.query(`
     WITH filtered AS (
-      SELECT * FROM events ${where}
+      SELECT * FROM incidents ${where}
     ),
     city_dur AS (
       SELECT data, SUM(end_ms - start_ms) as raw_total
@@ -313,7 +420,7 @@ export async function queryEventsByCityInZone(zone, startMs, endMs) {
     ORDER BY cd.raw_total DESC, f.data, f.start_ms
   `);
 
-  const CATEGORY_MAP = { missiles: "1", drones: "2", terrorists: "10" };
+  const CATEGORY_MAP = { missiles: "1", drones: "2", infiltration: "10" };
   return result.toArray().map((r) => ({
     city: r.data,
     category: CATEGORY_MAP[r.threat_type] || r.threat_type,

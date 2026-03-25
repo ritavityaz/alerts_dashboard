@@ -5,27 +5,33 @@ import { showTooltip, hideTooltip } from "./tooltip.js";
 const BINS = 48; // 30-minute resolution
 const COL_GAP = 4;
 const COLS = [
-  { key: "3d", label: "3d", i18n: "past3days" },
-  { key: "7d", label: "7d", i18n: "past7days" },
-  { key: "all", label: "all", i18n: "sinceStart" },
+  { key: "3d", label: "3d", i18nKey: "heatmap.past3days" },
+  { key: "7d", label: "7d", i18nKey: "heatmap.past7days" },
+  { key: "all", label: "all", i18nKey: "heatmap.sinceStart" },
 ];
 
 const HALF_LIFE_DAYS = 2; // fixed 2-day half-life
 const DECAY_RATE = Math.log(2) / HALF_LIFE_DAYS;
+
+const _hFmt = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: "Asia/Jerusalem" });
+const _mFmt = new Intl.DateTimeFormat("en-US", { minute: "numeric", timeZone: "Asia/Jerusalem" });
+
+function israelMinuteOfDay(date) {
+  return +_hFmt.format(date) * 60 + +_mFmt.format(date);
+}
 
 function computeBins(eventsArr, from, to) {
   const binCounts = new Float64Array(BINS);
   const minsPerBin = 1440 / BINS;
 
   for (const d of eventsArr) {
-    const s = +d._start, e = +(d._end || d._start);
+    const s = +d._start, e = +d._end;
     if (s > +to || e < +from) continue;
     const cs = Math.max(s, +from), ce = Math.min(e, +to);
     const age = (+to - cs) / 86400000;
     const weight = Math.exp(-DECAY_RATE * age);
-    const sDate = new Date(cs), eDate = new Date(ce);
-    let sm = sDate.getHours() * 60 + sDate.getMinutes();
-    let em = eDate.getHours() * 60 + eDate.getMinutes();
+    let sm = israelMinuteOfDay(new Date(cs));
+    let em = israelMinuteOfDay(new Date(ce));
     if (em <= sm) em = sm + 1;
     // Count once per bin touched (hybrid approach)
     const firstBin = Math.floor(sm / minsPerBin);
@@ -42,29 +48,21 @@ function fmtHour(h) {
   return h < 12 ? `${h}am` : `${h - 12}pm`;
 }
 
-// Match timeline dimensions exactly
-const TIMELINE_HEIGHT = 600;
-const TIMELINE_MARGIN = { top: 30, bottom: 16 };
-
-export function createHeatmap(container, timelineContainer) {
-  // Measure the timeline's legend div so we can add a matching spacer
-  const timelineLegend = timelineContainer.querySelector("div");
-  const legendHeight = timelineLegend ? timelineLegend.offsetHeight : 0;
-
+export function createHeatmap(container) {
   const header = d3.select(container).append("div")
-    .style("height", legendHeight > 0 ? `${legendHeight}px` : "auto")
     .style("display", "flex")
     .style("align-items", "center")
     .style("justify-content", "center")
-    .style("padding", "0 4px");
+    .style("padding", "4px");
   const titleEl = header.append("span")
     .style("font-size", "10px")
     .style("color", "#64748b")
     .style("white-space", "nowrap")
-    .text(t("alertHeatmap"));
+    .text(t("heatmap.title"));
 
-  const margin = { top: TIMELINE_MARGIN.top, right: 8, bottom: TIMELINE_MARGIN.bottom, left: 8 };
-  const height = TIMELINE_HEIGHT;
+  const margin = { top: 24, right: 8, bottom: 8, left: 8 };
+  const CELL_SIZE = 11;
+  const height = BINS * CELL_SIZE + margin.top + margin.bottom;
   const binHeight = (height - margin.top - margin.bottom) / BINS;
   const COL_WIDTH = binHeight; // square cells
   const innerWidth = COLS.length * COL_WIDTH + (COLS.length - 1) * COL_GAP;
@@ -116,14 +114,14 @@ export function createHeatmap(container, timelineContainer) {
           const j = bins.indexOf(v);
           const hourStart = j * 24 / BINS;
           const hourEnd = (j + 1) * 24 / BINS;
-          showTooltip(event.pageX, event.pageY, `<strong>${fmtHour(hourStart)}–${fmtHour(hourEnd)}</strong><br>${t(col.i18n)}<br>${v.toFixed(1)} weighted`);
+          showTooltip(event.pageX, event.pageY, `<strong>${fmtHour(hourStart)}–${fmtHour(hourEnd)}</strong><br>${t(col.i18nKey)}<br>${v.toFixed(1)} weighted`);
         })
         .on("mouseleave", () => { hideTooltip(); });
     });
   }
 
   function updateLabels() {
-    titleEl.text(t("alertHeatmap"));
+    titleEl.text(t("heatmap.title"));
     // Column labels stay as short abbreviations (3d/7d/all) in all languages
   }
 

@@ -2,6 +2,23 @@
   command = "npm run build"
   publish = "dist"
 
+# Root → default locale
+[[redirects]]
+  from = "/"
+  to = "/en/"
+  status = 302
+
+# SPA fallback for each locale
+[[redirects]]
+  from = "/en/*"
+  to = "/en/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/he/*"
+  to = "/he/index.html"
+  status = 200
+
 [[headers]]
   for = "/assets/*"
   [headers.values]

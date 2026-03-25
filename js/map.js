@@ -1,57 +1,60 @@
+/**
+ * Map component — MapLibre GL with feature-state driven coloring.
+ *
+ * Subscribes to alertCountsByCity and alertMaxCountPerCity signals.
+ * Listens to store for ctx/zone/city changes to zoom accordingly.
+ * Calls filters.selectCityFromMap() on map click.
+ */
+
 const maplibregl = window.maplibregl;
 import * as d3 from "d3";
-import { lang, t } from "./i18n.js";
+import { lang, t, formatNumber } from "./i18n.js";
 import { showTooltip, hideTooltip } from "./tooltip.js";
+import { onSignal } from "./queries.js";
+import * as store from "./store.js";
+import { selectCityFromMap } from "./filters.js";
+
+let map = null;
+let geojsonData = null;
+let geoBounds = null;
 
 function renderLegend(maxCount) {
   const canvas = document.getElementById("legend-bar");
-  const ctx = canvas.getContext("2d");
+  const canvasContext = canvas.getContext("2d");
   canvas.width = canvas.clientWidth;
-  const w = canvas.width;
-  const h = canvas.height;
+  const width = canvas.width;
+  const height = canvas.height;
 
   const colorScale = d3.scaleSequentialLog(d3.interpolateYlOrRd).domain([1, maxCount]);
-  for (let x = 0; x < w; x++) {
-    const val = Math.pow(maxCount, x / w);
-    ctx.fillStyle = colorScale(Math.max(1, val));
-    ctx.fillRect(x, 0, 1, h);
+  for (let x = 0; x < width; x++) {
+    const value = Math.pow(maxCount, x / width);
+    canvasContext.fillStyle = colorScale(Math.max(1, value));
+    canvasContext.fillRect(x, 0, 1, height);
   }
 
-  document.getElementById("legend-min").textContent = "1";
-  document.getElementById("legend-max").textContent = d3.format(",")(maxCount);
+  document.getElementById("legend-min").innerHTML = "<bdi>1</bdi>";
+  document.getElementById("legend-max").innerHTML = `<bdi>${formatNumber(maxCount)}</bdi>`;
 }
 
-export function createMap(container, geojson, countByZone, onCityClick) {
-  const height = Math.min(container.clientWidth * 1.2, 600);
-  container.style.height = `${height}px`;
+/**
+ * Initialize the map. Returns a promise that resolves when the map is loaded.
+ */
+export function initMap(container, geojson, initialCountsByCity) {
+  geojsonData = geojson;
+  geoBounds = d3.geoBounds(geojson);
 
-  const bounds = d3.geoBounds(geojson);
-
-  // Assign stable numeric IDs to features for setFeatureState
-  const featureIdByName = new Map();
-  for (let i = 0; i < geojson.features.length; i++) {
-    const f = geojson.features[i];
-    f.id = i;
-    featureIdByName.set(f.properties.name_he, i);
-  }
-
-  const map = new maplibregl.Map({
+  map = new maplibregl.Map({
     container,
     style: "https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json",
-    bounds: [bounds[0], bounds[1]],
+    bounds: [geoBounds[0], geoBounds[1]],
     fitBoundsOptions: { padding: 20 },
   });
 
-  const fmt = d3.format(",");
   const emptyGeoJSON = { type: "FeatureCollection", features: [] };
 
-  const ready = new Promise((resolve) => map.on("load", () => {
+  return new Promise((resolve) => map.on("load", () => {
     map.addSource("zones", { type: "geojson", data: geojson, promoteId: "name_he" });
 
-    // Use feature-state driven color via a step expression over the "bucket" state
-    // bucket is a 0-255 index into our color ramp
-    // Build a step expression: [0] → rampColors[0], [1] → rampColors[1], ...
-    // This is too large — instead use interpolate with r/g/b channels from feature-state
     map.addLayer({
       id: "zone-fill",
       type: "fill",
@@ -79,15 +82,17 @@ export function createMap(container, geojson, countByZone, onCityClick) {
       paint: { "line-color": "#00d062", "line-width": 2, "line-opacity": 1 },
     });
 
-    map.on("mousemove", "zone-fill", (e) => {
-      const p = e.features[0].properties;
-      const state = map.getFeatureState({ source: "zones", id: p.name_he });
-      const count = state?.count || 0;
+    // Hover tooltip
+    map.on("mousemove", "zone-fill", (event) => {
+      const properties = event.features[0].properties;
+      const featureState = map.getFeatureState({ source: "zones", id: properties.name_he });
+      const count = featureState?.count || 0;
       if (count > 0) {
         map.getCanvas().style.cursor = "pointer";
-        const name = lang === "he" ? p.name_he : p.name_en;
-        const zone = lang === "he" ? p.zone_he : p.zone_en;
-        showTooltip(e.originalEvent.pageX, e.originalEvent.pageY, `<strong>${name}</strong><br>${zone}<br>${fmt(count)} ${t("alerts")}`);
+        const name = lang === "he" ? properties.name_he : properties.name_en;
+        const zone = lang === "he" ? properties.zone_he : properties.zone_en;
+        showTooltip(event.originalEvent.pageX, event.originalEvent.pageY,
+          `<strong>${name}</strong><br>${zone}<br>${formatNumber(count)} ${t("map.alerts")}`);
       }
     });
 
@@ -96,82 +101,116 @@ export function createMap(container, geojson, countByZone, onCityClick) {
       hideTooltip();
     });
 
-    map.on("click", "zone-fill", (e) => {
-      const p = e.features[0].properties;
-      const state = map.getFeatureState({ source: "zones", id: p.name_he });
-      if ((state?.count || 0) > 0 && onCityClick) {
-        onCityClick(p.name_he);
+    // Click → select city
+    map.on("click", "zone-fill", (event) => {
+      const properties = event.features[0].properties;
+      const featureState = map.getFeatureState({ source: "zones", id: properties.name_he });
+      if ((featureState?.count || 0) > 0) {
+        selectCityFromMap(properties.name_he);
       }
     });
 
-    // Apply initial counts
-    applyFeatureStates(countByZone);
+    // Apply initial counts from snapshot
+    applyFeatureStates(initialCountsByCity);
+
+    // Subscribe to signals for live updates
+    // Both signals trigger re-render so order of emission doesn't matter.
+    let latestCounts = null;
+
+    function rerender() {
+      if (!latestCounts) return;
+      const currentMax = latestMaxCount || d3.max([...latestCounts.values()]) || 1;
+      applyFeatureStates(latestCounts, currentMax);
+      highlightCity(store.getState().city);
+    }
+
+    onSignal("alertCountsByCity", (countsByCity) => {
+      latestCounts = countsByCity;
+      rerender();
+    });
+
+    onSignal("alertMaxCountPerCity", (maxCount) => {
+      latestMaxCount = maxCount;
+      rerender();
+    });
+
+    // Subscribe to store for zoom changes
+    store.subscribe((state, changedKeys) => {
+      if (changedKeys.has("mapCtx") || changedKeys.has("zone") || changedKeys.has("city")) {
+        applyZoom(state);
+        highlightCity(state.city);
+      }
+    });
 
     resolve();
   }));
+}
 
-  function applyFeatureStates(countByZone, fixedMax) {
-    const maxCount = fixedMax || d3.max([...countByZone.values()]) || 1;
-    const colorScale = d3.scaleSequentialLog(d3.interpolateYlOrRd).domain([1, maxCount]);
+let latestMaxCount = null;
 
-    // Clear all states first, then set new ones
-    for (const f of geojson.features) {
-      const name = f.properties.name_he;
-      const count = countByZone.get(name) || 0;
-      if (count > 0) {
-        const c = d3.color(colorScale(count));
-        map.setFeatureState(
-          { source: "zones", id: name },
-          { count, r: c.r, g: c.g, b: c.b }
-        );
-      } else {
-        map.setFeatureState(
-          { source: "zones", id: name },
-          { count: 0, r: 0, g: 0, b: 0 }
-        );
-      }
+function applyFeatureStates(countsByCity, fixedMax) {
+  const maxCount = fixedMax || d3.max([...countsByCity.values()]) || 1;
+  const colorScale = d3.scaleSequentialLog(d3.interpolateYlOrRd).domain([1, maxCount]);
+
+  for (const feature of geojsonData.features) {
+    const cityName = feature.properties.name_he;
+    const count = countsByCity.get(cityName) || 0;
+    if (count > 0) {
+      const color = d3.color(colorScale(count));
+      map.setFeatureState(
+        { source: "zones", id: cityName },
+        { count, r: color.r, g: color.g, b: color.b }
+      );
+    } else {
+      map.setFeatureState(
+        { source: "zones", id: cityName },
+        { count: 0, r: 0, g: 0, b: 0 }
+      );
     }
-
-    renderLegend(maxCount);
   }
 
-  function zoomToZone(zoneName) {
-    if (!zoneName || zoneName === "all") {
-      map.fitBounds([bounds[0], bounds[1]], { padding: 20 });
-      return;
-    }
-    const matching = geojson.features.filter((f) => f.properties.zone_en === zoneName);
-    if (matching.length === 0) return;
-    const collection = { type: "FeatureCollection", features: matching };
-    const [[x0, y0], [x1, y1]] = d3.geoBounds(collection);
-    map.fitBounds([[x0, y0], [x1, y1]], { padding: 40 });
-  }
+  renderLegend(maxCount);
+}
 
-  function zoomToCity(nameHe) {
-    const feature = geojson.features.find((f) => f.properties.name_he === nameHe);
-    if (!feature) return;
-    const [[x0, y0], [x1, y1]] = d3.geoBounds(feature);
-    map.fitBounds([[x0, y0], [x1, y1]], { padding: 60, maxZoom: 12 });
+function applyZoom(state) {
+  if (state.mapCtx === "city" && state.city) {
+    zoomToCity(state.city);
+  } else if (state.mapCtx === "zone" && state.zone !== "all") {
+    zoomToZone(state.zone);
+  } else {
+    zoomToZone("all");
   }
+}
 
-  function highlightCity(nameHe) {
-    if (!nameHe) {
-      map.getSource("highlight")?.setData(emptyGeoJSON);
-      return;
-    }
-    const feature = geojson.features.find((f) => f.properties.name_he === nameHe);
-    if (!feature) {
-      map.getSource("highlight")?.setData(emptyGeoJSON);
-      return;
-    }
-    map.getSource("highlight")?.setData({ type: "FeatureCollection", features: [feature] });
+function zoomToZone(zoneName) {
+  if (!zoneName || zoneName === "all") {
+    map.fitBounds([geoBounds[0], geoBounds[1]], { padding: 20 });
+    return;
   }
+  const matching = geojsonData.features.filter((feature) => feature.properties.zone_en === zoneName);
+  if (matching.length === 0) return;
+  const collection = { type: "FeatureCollection", features: matching };
+  const [[x0, y0], [x1, y1]] = d3.geoBounds(collection);
+  map.fitBounds([[x0, y0], [x1, y1]], { padding: 40 });
+}
 
-  return {
-    ready,
-    recolor: (counts, fixedMax) => applyFeatureStates(counts, fixedMax),
-    zoomToZone,
-    zoomToCity,
-    highlightCity,
-  };
+function zoomToCity(cityNameHe) {
+  const feature = geojsonData.features.find((feature) => feature.properties.name_he === cityNameHe);
+  if (!feature) return;
+  const [[x0, y0], [x1, y1]] = d3.geoBounds(feature);
+  map.fitBounds([[x0, y0], [x1, y1]], { padding: 60, maxZoom: 12 });
+}
+
+function highlightCity(cityNameHe) {
+  if (!map?.getSource("highlight")) return;
+  if (!cityNameHe) {
+    map.getSource("highlight").setData({ type: "FeatureCollection", features: [] });
+    return;
+  }
+  const feature = geojsonData.features.find((feature) => feature.properties.name_he === cityNameHe);
+  if (!feature) {
+    map.getSource("highlight").setData({ type: "FeatureCollection", features: [] });
+    return;
+  }
+  map.getSource("highlight").setData({ type: "FeatureCollection", features: [feature] });
 }

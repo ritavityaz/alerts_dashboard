@@ -11,66 +11,141 @@
   </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Operation Sleepy Lion</title>
+  <title data-i18n="header.title">Operation Sleepy Lion</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦁</text></svg>">
+  <link rel="alternate" hreflang="en" href="/en/">
+  <link rel="alternate" hreflang="he" href="/he/">
+  <link rel="alternate" hreflang="x-default" href="/en/">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.19.0/dist/maplibre-gl.css">
-  <link rel="stylesheet" href="css/style.css">
   <script defer src="https://unpkg.com/maplibre-gl@5.19.0/dist/maplibre-gl.js"></script>
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="bg-gray-950 text-gray-200 font-sans pb-8">
-  <header class="sticky top-0 z-40 bg-gray-950/90 backdrop-blur-sm border-b border-gray-800">
+
+  <!-- ── Header ── -->
+  <header class="sticky top-0 z-40 bg-gray-950/90 backdrop-blur-sm border-b border-gray-800 overflow-x-hidden">
     <div class="max-w-7xl mx-auto px-2 sm:px-4 flex items-center h-12 sm:h-14 gap-3 sm:gap-6">
       <a href="#" class="flex items-center gap-2 shrink-0">
         <span class="text-2xl" role="img" aria-label="lion">🦁</span>
-        <h1 id="page-title" class="text-base sm:text-lg font-bold whitespace-nowrap">Operation Sleepy Lion</h1>
+        <h1 id="page-title" class="text-base sm:text-lg font-bold whitespace-nowrap" data-i18n="header.title">Operation Sleepy Lion</h1>
       </a>
       <p id="subtitle" class="text-gray-500 text-xs sm:text-sm hidden sm:block whitespace-nowrap"></p>
       <div class="flex-1"></div>
+
+      <!-- Desktop nav -->
       <nav class="hidden sm:flex items-center gap-4 text-sm">
-        <a href="#map-section" class="text-gray-400 hover:text-white transition-colors" data-i18n="navMap">Map</a>
-        <a href="#timeline-section" class="text-gray-400 hover:text-white transition-colors" data-i18n="navTimeline">Timeline</a>
-        <a href="#stats-section" class="text-gray-400 hover:text-white transition-colors" data-i18n="navStats">Stats</a>
-        <a href="#about-section" class="text-gray-400 hover:text-white transition-colors" data-i18n="navAbout">About</a>
+        <a href="#map-section" class="text-gray-400 hover:text-white transition-colors" data-i18n="header.navMap">Map</a>
+        <a href="#timeline-section" class="text-gray-400 hover:text-white transition-colors" data-i18n="header.navTimeline">Timeline</a>
+        <a href="#stats-section" class="text-gray-400 hover:text-white transition-colors" data-i18n="header.navStats">Stats</a>
+        <a href="#about-section" class="text-gray-400 hover:text-white transition-colors" data-i18n="header.navAbout">About</a>
       </nav>
+
+      <!-- Language toggle -->
       <div id="lang-toggle" class="flex text-xs shrink-0">
-        <button data-lang="en" class="px-2 py-1 rounded-l border border-gray-700 bg-indigo-600 text-white cursor-pointer">EN</button>
-        <button data-lang="he" class="px-2 py-1 rounded-r border border-gray-700 bg-gray-800 text-gray-400 cursor-pointer">HE</button>
+        <a href="/en/" class="px-2 py-1 rounded-s border border-gray-700 bg-indigo-600 text-white" data-lang="en">EN</a>
+        <a href="/he/" class="px-2 py-1 rounded-e border border-gray-700 bg-gray-800 text-gray-400" data-lang="he">HE</a>
       </div>
+    </div>
+
+    <!-- ── Filter chips ── -->
+    <div id="filter-chips" class="max-w-7xl mx-auto px-2 sm:px-4 flex items-center gap-2 py-1.5 overflow-x-auto text-xs">
+      <button id="chip-threat" class="filter-chip" data-chip="threat">
+        <span class="chip-label" data-i18n="filters.allThreats">All threats</span>
+        <svg class="chip-arrow" viewBox="0 0 12 12" width="10" height="10"><path d="M3 5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+      </button>
+      <button id="chip-zone" class="filter-chip" data-chip="zone">
+        <span class="chip-label" data-i18n="filters.allZones">All zones</span>
+        <svg class="chip-arrow" viewBox="0 0 12 12" width="10" height="10"><path d="M3 5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+      </button>
+      <button id="chip-city" class="filter-chip" data-chip="city">
+        <span class="chip-label" data-i18n="filters.cityPlaceholder">City...</span>
+        <svg class="chip-arrow" viewBox="0 0 12 12" width="10" height="10"><path d="M3 5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+      </button>
+      <button id="chip-time" class="filter-chip filter-chip-time" data-chip="time">
+        <span class="chip-label">—</span>
+        <svg class="chip-arrow" viewBox="0 0 12 12" width="10" height="10"><path d="M3 5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+      </button>
+      <button id="chip-reset" class="filter-chip filter-chip-reset hidden" data-chip="reset" data-i18n="filters.reset">Reset</button>
     </div>
   </header>
 
+  <!-- ── Desktop dropdowns (anchored to chips, hidden by default) ── -->
+  <div id="dropdown-threat" class="chip-dropdown hidden">
+    <button class="chip-dropdown-item" data-value="all" data-i18n="filters.allThreats">All threats</button>
+    <button class="chip-dropdown-item" data-value="1" data-i18n="filters.missiles">Missiles</button>
+    <button class="chip-dropdown-item" data-value="2" data-i18n="filters.drones">Drones</button>
+    <button class="chip-dropdown-item" data-value="10" data-i18n="filters.infiltrations">Infiltrations</button>
+  </div>
+  <div id="dropdown-zone" class="chip-dropdown hidden">
+    <input id="zone-search" autocomplete="off" class="chip-dropdown-search" data-i18n-placeholder="filters.allZones" placeholder="All zones">
+    <ul id="zone-results" class="chip-dropdown-list"></ul>
+  </div>
+  <div id="dropdown-city" class="chip-dropdown hidden">
+    <input id="city-search" autocomplete="off" class="chip-dropdown-search" data-i18n-placeholder="filters.cityPlaceholder" placeholder="City...">
+    <ul id="city-results" class="chip-dropdown-list"></ul>
+  </div>
+  <div id="dropdown-time" class="chip-dropdown hidden" style="min-width: 240px">
+    <div class="flex flex-wrap gap-1 px-3 py-2 border-b border-gray-700">
+      <button class="time-preset" data-value="today" data-i18n="slider.today">Today</button>
+      <button class="time-preset" data-value="yesterday" data-i18n="slider.yesterday">Yesterday</button>
+      <button class="time-preset" data-value="3d" data-i18n="slider.past3days">3 days</button>
+      <button class="time-preset" data-value="7d" data-i18n="slider.past7days">7 days</button>
+      <button class="time-preset" data-value="all" data-i18n="slider.sinceStart">All time</button>
+    </div>
+    <div class="px-3 py-2 flex flex-col gap-2">
+      <label class="text-xs text-gray-500">
+        <span data-i18n="filters.from">From</span>
+        <input id="time-start" type="datetime-local" class="time-input">
+      </label>
+      <label class="text-xs text-gray-500">
+        <span data-i18n="filters.to">To</span>
+        <input id="time-end" type="datetime-local" class="time-input">
+      </label>
+    </div>
+  </div>
+
   <main id="app" class="max-w-7xl mx-auto px-2 sm:px-4 pt-4">
-    <div id="filter-bar" class="mb-3 flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-3">
-      <select id="threat-filter" class="bg-gray-800 text-gray-200 text-sm border border-gray-700 rounded px-3 py-1.5">
-        <option value="all" data-i18n="allThreats">All threats</option>
-        <option value="1" data-i18n="missiles">Missiles</option>
-        <option value="2" data-i18n="drones">Drones</option>
-        <option value="10" data-i18n="infiltrations">Infiltrations</option>
-      </select>
-      <div id="city-picker" class="relative w-full sm:w-40 order-last sm:order-none">
-        <input id="city-filter" placeholder="City..." autocomplete="off" class="bg-gray-800 text-gray-200 text-sm border border-gray-700 rounded px-3 py-1.5 w-full">
-        <ul id="city-dropdown" class="hidden absolute z-50 mt-1 w-full max-h-48 overflow-y-auto bg-gray-800 border border-gray-700 rounded shadow-lg text-sm"></ul>
-      </div>
-      <select id="zone-filter" class="bg-gray-800 text-gray-200 text-sm border border-gray-700 rounded px-3 py-1.5">
-        <option value="all" data-i18n="allZones">All zones</option>
-      </select>
-      <button id="reset-filters" class="text-gray-500 text-sm hover:text-gray-200 cursor-pointer hidden" data-i18n="reset">Reset</button>
-      <div id="context-toggle" class="sm:ml-auto flex text-xs hidden">
-        <button data-ctx="country" data-i18n="country" class="px-2 py-1 rounded-l border border-gray-700 bg-gray-800 text-gray-400 hover:text-white cursor-pointer">Country</button>
-        <button data-ctx="zone" data-i18n="zone" class="px-2 py-1 border-t border-b border-gray-700 bg-gray-800 text-gray-400 hover:text-white cursor-pointer">Zone</button>
-        <button data-ctx="city" data-i18n="city" class="px-2 py-1 rounded-r border border-gray-700 bg-indigo-600 text-white cursor-pointer">City</button>
-      </div>
-    </div>
-    <div id="legend" class="mb-2 flex items-center gap-2 text-xs text-gray-400">
-      <span id="legend-min">0</span>
-      <canvas id="legend-bar" height="12" class="rounded flex-1"></canvas>
-      <span id="legend-max">0</span>
-      <span data-i18n="alerts">alerts</span>
-    </div>
+
+    <!-- ── Map + Stats ── -->
     <div id="map-section"></div>
+    <div id="legend" class="mb-2 flex items-center gap-3 text-xs text-gray-400 min-w-0">
+      <span id="legend-min" class="shrink-0"><bdi>0</bdi></span>
+      <canvas id="legend-bar" height="12" class="rounded flex-1 min-w-0"></canvas>
+      <span id="legend-max" class="shrink-0"><bdi>0</bdi></span>
+      <span class="shrink-0" data-i18n="map.alerts">alerts</span>
+    </div>
+
     <div id="map-stats-row" class="flex flex-col sm:flex-row sm:flex-wrap gap-3">
-      <div id="map-container" class="bg-gray-900 border border-gray-800 rounded-lg sm:flex-1 min-w-0 order-1" style="min-height:400px"></div>
-      <div id="slider-section" class="order-2 sm:order-3 sm:w-full">
+      <div id="map-container" data-component="alertMap" class="relative bg-gray-900 border border-gray-800 rounded-lg sm:flex-1 min-w-0 order-1 h-[60vh] sm:h-auto" style="min-height:400px">
+        <div id="context-toggle" class="hidden absolute top-2 left-2 z-10 flex flex-row">
+          <button class="ctx-btn bg-gray-800 text-gray-400" data-ctx="city" data-i18n="filters.city">City</button>
+          <button class="ctx-btn bg-gray-800 text-gray-400" data-ctx="zone" data-i18n="filters.zone">Zone</button>
+          <button class="ctx-btn bg-gray-800 text-gray-400" data-ctx="country" data-i18n="filters.country">Country</button>
+        </div>
+      </div>
+      <div id="stats-panel" data-component="statsPanel" class="flex flex-row flex-wrap sm:flex-col sm:flex-nowrap gap-3 w-full sm:w-48 sm:shrink-0 order-3 sm:order-2">
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 flex-1 basis-[calc(50%-0.375rem)] sm:basis-auto">
+          <div class="text-gray-500 text-xs mb-1" data-i18n="stats.totalAlerts">Total Alerts</div>
+          <div id="stat-total" class="text-2xl font-bold"><bdi>0</bdi></div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 flex-1 basis-[calc(50%-0.375rem)] sm:basis-auto">
+          <div class="text-gray-500 text-xs mb-1" data-i18n="stats.citiesAffected">Cities Affected</div>
+          <div id="stat-cities" class="text-2xl font-bold"><bdi>0</bdi></div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 flex-1 basis-[calc(50%-0.375rem)] sm:basis-auto">
+          <div class="text-gray-500 text-xs mb-1" data-i18n="stats.peakDay">Peak Day</div>
+          <div id="stat-peak-day" class="text-lg font-bold">—</div>
+          <div id="stat-peak-count" class="text-gray-400 text-xs"></div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 flex-1 basis-[calc(50%-0.375rem)] sm:basis-auto">
+          <div class="text-gray-500 text-xs mb-1" data-i18n="stats.alertsByThreat">Alerts by Threat</div>
+          <div id="stat-missiles" class="text-sm"><span class="text-gray-400" data-i18n="stats.missiles">Missiles</span> <bdi class="font-bold float-end">0</bdi></div>
+          <div id="stat-drones" class="text-sm"><span class="text-gray-400" data-i18n="stats.drones">Drones</span> <bdi class="font-bold float-end">0</bdi></div>
+          <div id="stat-infiltration" class="text-sm"><span class="text-gray-400" data-i18n="stats.infiltrations">Infiltrations</span> <bdi class="font-bold float-end">0</bdi></div>
+        </div>
+      </div>
+      <!-- ── Time controls + Sparkline (order-2 keeps it between map and stats on mobile) ── -->
+      <div id="slider-section" data-component="timeSlider" class="order-2 w-full sm:order-3">
         <div id="sparkline" class="w-full" style="height:40px"></div>
         <div class="range-slider">
           <input type="range" id="range-min" min="0" max="100" value="0">
@@ -89,93 +164,92 @@
           <span id="slider-end" class="font-mono tabular-nums"></span>
         </div>
       </div>
-      <div id="stats-panel" class="flex flex-row flex-wrap sm:flex-col sm:flex-nowrap gap-3 w-full sm:w-48 sm:shrink-0 order-3 sm:order-2">
-        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 flex-1 basis-[calc(50%-0.375rem)] sm:basis-auto">
-          <div class="text-gray-500 text-xs mb-1" data-i18n="totalAlerts">Total Alerts</div>
-          <div id="stat-total" class="text-2xl font-bold">0</div>
-        </div>
-        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 flex-1 basis-[calc(50%-0.375rem)] sm:basis-auto">
-          <div class="text-gray-500 text-xs mb-1" data-i18n="citiesAffected">Cities Affected</div>
-          <div id="stat-cities" class="text-2xl font-bold">0</div>
-        </div>
-        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 flex-1 basis-[calc(50%-0.375rem)] sm:basis-auto">
-          <div class="text-gray-500 text-xs mb-1" data-i18n="peakDay">Peak Day</div>
-          <div id="stat-peak-day" class="text-lg font-bold">—</div>
-          <div id="stat-peak-count" class="text-gray-400 text-xs"></div>
-        </div>
-        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 flex-1 basis-[calc(50%-0.375rem)] sm:basis-auto">
-          <div class="text-gray-500 text-xs mb-1" data-i18n="threats">Alerts by Threat</div>
-          <div id="stat-missiles" class="text-sm"><span class="text-gray-400" data-i18n="missiles">Missiles</span> <span class="font-bold float-right">0</span></div>
-          <div id="stat-drones" class="text-sm"><span class="text-gray-400" data-i18n="drones">Drones</span> <span class="font-bold float-right">0</span></div>
-          <div id="stat-infiltration" class="text-sm"><span class="text-gray-400" data-i18n="infiltrations">Infiltrations</span> <span class="font-bold float-right">0</span></div>
-        </div>
-      </div>
     </div>
 
+    <!-- ── Timeline + Heatmap ── -->
     <div id="timeline-section"></div>
-    <h2 id="timeline-title" class="text-lg font-bold mt-8 mb-3" data-i18n="alertTimeline">Alert Timeline</h2>
+    <h2 id="timeline-title" class="text-lg font-bold mt-8 mb-3" data-i18n="timeline.title">Alert Timeline</h2>
     <div id="timeline-heatmap-row" class="flex flex-col sm:flex-row gap-3">
-      <div id="timeline-container" class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden flex-1 min-w-0"></div>
-      <div id="heatmap-container" class="bg-gray-900 border border-gray-800 rounded-lg shrink-0"></div>
+      <div id="timeline-container" data-component="alertTimeline" class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden flex-1 min-w-0"></div>
+      <!-- TODO: re-enable heatmap after incident migration stabilizes -->
+      <div id="heatmap-container" data-component="alertHeatmap" class="bg-gray-900 border border-gray-800 rounded-lg shrink-0 hidden"></div>
     </div>
+
+    <!-- ── Quiet periods ── -->
     <div id="stats-section" class="bg-gray-900 border border-gray-800 rounded-lg p-4 mt-3">
       <div id="quiet-stats-inner" class="flex flex-col sm:flex-row gap-4 sm:gap-8">
-      <div>
-        <div class="text-gray-400 text-sm font-semibold mb-2" data-i18n="longestQuiet">Longest Quiet</div>
-        <div class="flex gap-6">
-          <div id="stat-quiet-today" class="text-sm">
-            <div class="text-gray-500 text-xs" data-i18n="today">Today</div>
-            <div class="font-bold" data-field="dur">—</div>
-            <div class="text-gray-500 text-xs" data-field="range"></div>
-          </div>
-          <div id="stat-quiet-3d" class="text-sm">
-            <div class="text-gray-500 text-xs" data-i18n="past3days">3 days</div>
-            <div class="font-bold" data-field="dur">—</div>
-            <div class="text-gray-500 text-xs" data-field="range"></div>
-          </div>
-          <div id="stat-quiet-7d" class="text-sm">
-            <div class="text-gray-500 text-xs" data-i18n="past7days">7 days</div>
-            <div class="font-bold" data-field="dur">—</div>
-            <div class="text-gray-500 text-xs" data-field="range"></div>
-          </div>
-          <div id="stat-quiet-all" class="text-sm">
-            <div class="text-gray-500 text-xs" data-i18n="sinceStart">All time</div>
-            <div class="font-bold" data-field="dur">—</div>
-            <div class="text-gray-500 text-xs" data-field="range"></div>
-          </div>
-        </div>
-      </div>
-      <div class="border-t sm:border-t-0 sm:border-s border-gray-700 pt-4 sm:pt-0 sm:ps-8">
-        <div class="text-gray-400 text-sm font-semibold mb-2" data-i18n="quietestHour">Quietest Hours</div>
-        <div class="flex gap-6">
-          <div id="stat-quietest-3d" class="text-sm">
-            <div class="text-gray-500 text-xs" data-i18n="past3days">3 days</div>
-            <div class="font-bold" data-field="range">—</div>
-            <div class="text-gray-500 text-xs" data-field="dur"></div>
-          </div>
-          <div id="stat-quietest-7d" class="text-sm">
-            <div class="text-gray-500 text-xs" data-i18n="past7days">7 days</div>
-            <div class="font-bold" data-field="range">—</div>
-            <div class="text-gray-500 text-xs" data-field="dur"></div>
-          </div>
-          <div id="stat-quietest-all" class="text-sm">
-            <div class="text-gray-500 text-xs" data-i18n="sinceStart">All time</div>
-            <div class="font-bold" data-field="range">—</div>
-            <div class="text-gray-500 text-xs" data-field="dur"></div>
+        <div>
+          <div class="text-gray-400 text-sm font-semibold mb-2" data-i18n="quietPeriods.longestQuiet">Longest Quiet</div>
+          <div class="flex gap-6">
+            <div id="stat-quiet-today" class="text-sm">
+              <div class="text-gray-500 text-xs" data-i18n="quietPeriods.today">Today</div>
+              <div class="font-bold" data-field="dur">—</div>
+              <div class="text-gray-500 text-xs" data-field="range"></div>
+            </div>
+            <div id="stat-quiet-3d" class="text-sm">
+              <div class="text-gray-500 text-xs" data-i18n="quietPeriods.past3days">3 days</div>
+              <div class="font-bold" data-field="dur">—</div>
+              <div class="text-gray-500 text-xs" data-field="range"></div>
+            </div>
+            <div id="stat-quiet-7d" class="text-sm">
+              <div class="text-gray-500 text-xs" data-i18n="quietPeriods.past7days">7 days</div>
+              <div class="font-bold" data-field="dur">—</div>
+              <div class="text-gray-500 text-xs" data-field="range"></div>
+            </div>
+            <div id="stat-quiet-all" class="text-sm">
+              <div class="text-gray-500 text-xs" data-i18n="quietPeriods.sinceStart">All time</div>
+              <div class="font-bold" data-field="dur">—</div>
+              <div class="text-gray-500 text-xs" data-field="range"></div>
+            </div>
           </div>
         </div>
-      </div>
+        <div class="border-t sm:border-t-0 sm:border-s border-gray-700 pt-4 sm:pt-0 sm:ps-8">
+          <div class="text-gray-400 text-sm font-semibold mb-2" data-i18n="quietPeriods.quietestHour">Quietest Hours</div>
+          <div class="flex gap-6">
+            <div id="stat-quietest-3d" class="text-sm">
+              <div class="text-gray-500 text-xs" data-i18n="quietPeriods.past3days">3 days</div>
+              <div class="font-bold" data-field="range">—</div>
+              <div class="text-gray-500 text-xs" data-field="dur"></div>
+            </div>
+            <div id="stat-quietest-7d" class="text-sm">
+              <div class="text-gray-500 text-xs" data-i18n="quietPeriods.past7days">7 days</div>
+              <div class="font-bold" data-field="range">—</div>
+              <div class="text-gray-500 text-xs" data-field="dur"></div>
+            </div>
+            <div id="stat-quietest-all" class="text-sm">
+              <div class="text-gray-500 text-xs" data-i18n="quietPeriods.sinceStart">All time</div>
+              <div class="font-bold" data-field="range">—</div>
+              <div class="text-gray-500 text-xs" data-field="dur"></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-    <h2 id="duration-chart-title" class="text-lg font-bold mt-8 mb-3" data-i18n="durationByZone">Alert Duration by Zone</h2>
-    <div id="duration-chart" class="bg-gray-900 border border-gray-800 rounded-lg p-4"></div>
 
+    <!-- ── Duration by Zone (temporarily hidden) ── -->
+    <h2 id="duration-chart-title" class="text-lg font-bold mt-8 mb-3 hidden" data-i18n="charts.durationByZone">Alert Duration by Zone</h2>
+    <div id="duration-chart" data-component="durationByZoneChart" class="bg-gray-900 border border-gray-800 rounded-lg p-4 hidden"></div>
+
+    <!-- ── Daily charts ── -->
+    <h2 id="daily-histograms-title" class="text-lg font-bold mt-8 mb-3" data-i18n="charts.dailyBreakdown">Daily Breakdown</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+      <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+        <h3 class="text-sm font-semibold text-gray-400 mb-2" data-i18n="charts.alertsPerDay">Alerts per Day</h3>
+        <div id="daily-alerts-chart" data-component="dailyAlertsChart"></div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+        <h3 class="text-sm font-semibold text-gray-400 mb-2" data-i18n="charts.shelterPerDay">Time in Shelter per Day</h3>
+        <div id="daily-shelter-chart" data-component="dailyShelterChart"></div>
+      </div>
+    </div>
+
+    <!-- ── About ── -->
     <div id="about-section" class="mt-8">
-      <h2 class="text-lg font-bold mb-3" data-i18n="aboutTitle">About</h2>
+      <h2 class="text-lg font-bold mb-3" data-i18n="about.title">About</h2>
       <div class="grid sm:grid-cols-3 gap-3">
         <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
-          <h3 class="text-sm font-semibold text-gray-300 mb-2" data-i18n="aboutWhat">What is this?</h3>
-          <p class="text-gray-400 text-sm leading-relaxed whitespace-pre-line" data-i18n="aboutWhatText">Missiles. Drones. Bombing. Trauma. No sleep. Nervous. Eat too much. Sad.
+          <h3 class="text-sm font-semibold text-gray-300 mb-2" data-i18n="about.whatTitle">What is this?</h3>
+          <p class="text-gray-400 text-sm leading-relaxed whitespace-pre-line" data-i18n="about.whatText">Missiles. Drones. Bombing. Trauma. No sleep. Nervous. Eat too much. Sad.
 
 Solution? Sleepy Lion will not help you. Must exercise. Take antidepressants. Stay sheltered.
 
@@ -190,12 +264,12 @@ Stay safe, sleep tight, don't let the vibecode bugs bite.
 PS: translation not available in Farsi for obvious reasons.</p>
         </div>
         <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
-          <h3 class="text-sm font-semibold text-gray-300 mb-2" data-i18n="aboutData">Data Sources</h3>
-          <p class="text-gray-400 text-sm leading-relaxed whitespace-pre-line" data-i18n-html="aboutDataText">…</p>
+          <h3 class="text-sm font-semibold text-gray-300 mb-2" data-i18n="about.dataTitle">Data Sources</h3>
+          <p class="text-gray-400 text-sm leading-relaxed whitespace-pre-line" data-i18n-html="about.dataText">…</p>
         </div>
         <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
-          <h3 class="text-sm font-semibold text-gray-300 mb-2" data-i18n="aboutHow">How to Use</h3>
-          <p class="text-gray-400 text-sm leading-relaxed whitespace-pre-line" data-i18n="aboutHowText">Use the map to explore alert density across Israel. Click a city or zone to drill down.
+          <h3 class="text-sm font-semibold text-gray-300 mb-2" data-i18n="about.howTitle">How to Use</h3>
+          <p class="text-gray-400 text-sm leading-relaxed whitespace-pre-line" data-i18n="about.howText">Use the map to explore alert density across Israel. Click a city or zone to drill down.
 
 Filter by threat type using the dropdown.
 
@@ -207,14 +281,47 @@ The timeline shows alerts by time of day, and the heatmap highlights recurring p
     </div>
   </main>
 
+  <!-- ── Tooltip (desktop: floating, mobile: bottom bar) ── -->
   <div id="tooltip" class="tooltip"></div>
+
+  <!-- ── Mobile filter bottom sheet ── -->
+  <div id="filter-backdrop" class="bottom-sheet-backdrop sm:hidden"></div>
+  <div id="filter-sheet" class="bottom-sheet sm:hidden" data-component="mobileFilters">
+    <div class="bottom-sheet-handle"></div>
+    <div class="px-4 pb-6 pt-2">
+      <div class="mb-4">
+        <div class="text-gray-400 text-xs font-semibold mb-2" data-i18n="stats.alertsByThreat">Alerts by Threat</div>
+        <div id="mobile-threat-chips" class="flex flex-wrap gap-2">
+          <button data-value="all" class="px-4 py-2 rounded-full border border-gray-700 bg-indigo-600 text-white text-sm cursor-pointer" data-i18n="filters.allThreats">All threats</button>
+          <button data-value="1" class="px-4 py-2 rounded-full border border-gray-700 bg-gray-800 text-gray-400 text-sm cursor-pointer" data-i18n="filters.missiles">Missiles</button>
+          <button data-value="2" class="px-4 py-2 rounded-full border border-gray-700 bg-gray-800 text-gray-400 text-sm cursor-pointer" data-i18n="filters.drones">Drones</button>
+          <button data-value="10" class="px-4 py-2 rounded-full border border-gray-700 bg-gray-800 text-gray-400 text-sm cursor-pointer" data-i18n="filters.infiltrations">Infiltrations</button>
+        </div>
+      </div>
+      <div class="mb-4">
+        <div class="text-gray-400 text-xs font-semibold mb-2" data-i18n="filters.city">City</div>
+        <input id="mobile-city-filter" autocomplete="off" class="bg-gray-800 text-gray-200 text-sm border border-gray-700 rounded px-3 py-2 w-full" data-i18n-placeholder="filters.cityPlaceholder" placeholder="City...">
+        <ul id="mobile-city-dropdown" class="hidden mt-1 w-full max-h-48 overflow-y-auto bg-gray-800 border border-gray-700 rounded shadow-lg text-sm"></ul>
+      </div>
+      <div class="mb-4">
+        <div class="text-gray-400 text-xs font-semibold mb-2" data-i18n="filters.zone">Zone</div>
+        <select id="mobile-zone-filter" class="bg-gray-800 text-gray-200 text-sm border border-gray-700 rounded px-3 py-2 w-full">
+          <option value="all" data-i18n="filters.allZones">All zones</option>
+        </select>
+      </div>
+      <div class="flex gap-3">
+        <button id="mobile-reset" class="flex-1 px-4 py-2 rounded border border-gray-700 bg-gray-800 text-gray-400 text-sm cursor-pointer" data-i18n="filters.reset">Reset</button>
+        <button id="mobile-apply" class="flex-1 px-4 py-2 rounded bg-indigo-600 text-white text-sm cursor-pointer">Apply</button>
+      </div>
+    </div>
+  </div>
 
   <footer class="max-w-6xl mx-auto px-4 py-6 mt-12 border-t border-gray-800 text-gray-500 text-xs flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
     <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="sleepylion" data-color="#FFDD00" data-emoji="" data-font="Lato" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff"></script>
-    <span data-i18n="footerDisclaimer">For informational purposes only. Not affiliated with anyone.</span>
+    <span data-i18n="footer.disclaimer">For informational purposes only. Not affiliated with anyone.</span>
     <span class="flex items-center gap-1.5"><a href="https://github.com/ritavityaz/alerts_dashboard" target="_blank" class="text-gray-400 hover:text-white transition-colors"><svg class="inline w-4 h-4" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a> · MIT License</span>
   </footer>
 
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="js/init.js"></script>
 </body>
 </html>

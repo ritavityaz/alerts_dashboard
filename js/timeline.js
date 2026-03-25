@@ -1,35 +1,59 @@
 import * as d3 from "d3";
 import { lang, t } from "./i18n.js";
 import { showTooltip, hideTooltip, pinTooltip, unpinTooltip, isTooltipPinned, setOnUnpin } from "./tooltip.js";
+import { onSignal } from "./queries.js";
 
-function toFractionalHour(date) {
-  return date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
+/**
+ * Israel-timezone helpers.
+ *
+ * Israel offset is +02:00 (standard) or +03:00 (DST). We compute it once
+ * for the dataset midpoint and use simple ms arithmetic everywhere —
+ * the ±1h DST error is acceptable for timeline display.
+ */
+const ISRAEL_OFFSET_MS = (() => {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Jerusalem",
+    hour: "numeric", minute: "numeric", hour12: false,
+    year: "numeric", month: "numeric", day: "numeric",
+  });
+  const now = new Date();
+  const parts = {};
+  for (const { type, value } of fmt.formatToParts(now)) parts[type] = +value;
+  const localMs = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour === 24 ? 0 : parts.hour, parts.minute);
+  return localMs - (+now - (+now % 60000));
+})();
+
+function israelHourOfDay(date) {
+  const localMs = +date + ISRAEL_OFFSET_MS;
+  return (((localMs % 86400000) + 86400000) % 86400000) / 3600000;
+}
+
+/** Return midnight Israel time as a UTC Date for the day containing `date`. */
+function israelDay(date) {
+  const localMs = +date + ISRAEL_OFFSET_MS;
+  const midnightLocal = localMs - (((localMs % 86400000) + 86400000) % 86400000);
+  return new Date(midnightLocal - ISRAEL_OFFSET_MS);
 }
 
 function dayslice(alerts) {
   const slices = [];
   for (const a of alerts) {
-    if (!a._end) {
-      slices.push({ ...a, day: d3.timeDay(a._start), y0: toFractionalHour(a._start), y1: null });
-      continue;
-    }
+    let cursorMs = +a._start;
+    const endMs = +a._end;
 
-    let cursor = new Date(a._start);
-    const end = a._end;
-
-    while (cursor < end) {
-      const day = d3.timeDay(cursor);
-      const nextDay = d3.timeDay.offset(day, 1);
-      const sliceEnd = end < nextDay ? end : nextDay;
+    while (cursorMs < endMs) {
+      const dayMs = +israelDay(new Date(cursorMs));
+      const nextDayMs = dayMs + 86400000;
+      const sliceEndMs = Math.min(endMs, nextDayMs);
 
       slices.push({
         ...a,
-        day,
-        y0: toFractionalHour(cursor),
-        y1: cursor < sliceEnd ? toFractionalHour(sliceEnd === nextDay ? new Date(nextDay - 1) : sliceEnd) : null,
+        day: new Date(dayMs),
+        y0: israelHourOfDay(new Date(cursorMs)),
+        y1: israelHourOfDay(new Date(sliceEndMs < nextDayMs ? sliceEndMs : nextDayMs - 1)),
       });
 
-      cursor = nextDay;
+      cursorMs = nextDayMs;
     }
   }
   return slices;
@@ -38,22 +62,25 @@ function dayslice(alerts) {
 const threatColors = {
   missiles: "#ef4444",
   drones: "#8b5cf6",
-  terrorists: "#f59e0b",
+  infiltration: "#f59e0b",
 };
 
-export function createTimeline(container, allAlerts, { resolveZoneName = (z) => z, onClusterSelect = null } = {}) {
+export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) => z, onClusterSelect = null } = {}) {
   const yAxisWidth = 44;
   const margin = { top: 30, right: 16, bottom: 16 };
   const height = 600;
 
-  // Fixed day domain from all alerts
-  const days = [...new Set(allAlerts.map((a) => +d3.timeDay(a._start)))].sort((a, b) => a - b).map((d) => new Date(d));
+  // Fixed day domain from minMs/maxMs range (Israel timezone)
+  const firstDay = israelDay(new Date(minMs));
+  const lastDay = israelDay(new Date(maxMs));
+  const days = [];
+  for (let d = +firstDay; d <= +lastDay; d += 86400000) days.push(new Date(d));
 
   // Color legend
   const threatI18nKeys = {
-    missiles: "timelineMissiles",
-    drones: "timelineDrones",
-    terrorists: "timelineTerrorists",
+    missiles: "timeline.missiles",
+    drones: "timeline.drones",
+    infiltration: "timeline.infiltration",
   };
   const legendDiv = d3.select(container).append("div")
     .attr("class", "flex gap-4 px-3 pt-3 text-xs justify-end");
@@ -132,7 +159,7 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
     .attr("fill", "#94a3b8")
     .attr("font-size", "10px")
     .attr("font-weight", "bold")
-    .text(d3.timeFormat("%b"));
+    .text((d) => d.toLocaleString(lang, { month: "short", timeZone: "Asia/Jerusalem" }));
 
   // Y-axis (fixed left column) — draw tick lines full width in data SVG, labels in yAxisSvg
   yAxisSvg.append("g")
@@ -181,12 +208,12 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
       let envelopeEnd = -Infinity;
       for (const slice of cluster) {
         envelopeStart = Math.min(envelopeStart, slice.y0);
-        envelopeEnd = Math.max(envelopeEnd, slice.y1 !== null ? slice.y1 : slice.y0);
+        envelopeEnd = Math.max(envelopeEnd, slice.y1);
       }
       // Pull in any slice that touches the envelope
       for (const candidate of allDaySlices) {
         if (cluster.has(candidate)) continue;
-        const candidateEnd = candidate.y1 !== null ? candidate.y1 : candidate.y0;
+        const candidateEnd = candidate.y1;
         if (candidate.y0 <= envelopeEnd && candidateEnd >= envelopeStart) {
           cluster.add(candidate);
           clusterGrew = true;
@@ -213,7 +240,7 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
       const cityName = lang === "he" ? (slice.NAME_HE || slice.data) : (slice.NAME_EN || slice.data);
       const threatLabel = t(threatI18nKeys[slice.threat_type]);
       const startStr = timeFmt(slice._start);
-      const endStr = slice._end ? " \u2013 " + timeFmt(slice._end) : "";
+      const endStr = " \u2013 " + timeFmt(slice._end);
       return `<strong><bdi>${cityName}</bdi></strong><br>${threatLabel}<br><span dir="ltr">${startStr}${endStr}</span>`;
     }
 
@@ -234,8 +261,8 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
 
     // Compute cluster timespan from all slices
     const clusterStart = new Date(Math.min(...overlappingSlices.map((s) => +s._start)));
-    const clusterEnd = new Date(Math.max(...overlappingSlices.map((s) => +(s._end || s._start))));
-    const dateFmt = d3.timeFormat("%b %-d");
+    const clusterEnd = new Date(Math.max(...overlappingSlices.map((s) => +s._end)));
+    const dateFmt = d3.timeFormat("%-d/%m");
     const spanStart = `${dateFmt(clusterStart)} ${timeFmt(clusterStart)}`;
     const spanEnd = `${dateFmt(clusterEnd)} ${timeFmt(clusterEnd)}`;
     const timespan = +clusterStart === +clusterEnd ? spanStart
@@ -243,7 +270,7 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
       : `${spanStart} \u2013 ${spanEnd}`;
 
     const htmlParts = [];
-    htmlParts.push(`<div style="margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid rgba(255,255,255,0.15)"><div dir="ltr" style="font-size:11px"><strong>${timespan}</strong></div><div style="opacity:0.5;font-size:10px;margin-top:1px">${dedupedSlices.length} ${t("alerts")} &middot; ${uniqueCities.size} ${t("cities")}</div></div>`);
+    htmlParts.push(`<div style="margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid rgba(255,255,255,0.15)"><div dir="ltr" style="font-size:11px"><strong>${timespan}</strong></div><div style="opacity:0.5;font-size:10px;margin-top:1px">${dedupedSlices.length} ${t("timeline.alerts")} &middot; ${uniqueCities.size} ${t("timeline.cities")}</div></div>`);
 
     if (useZoneGrouping) {
       htmlParts.push(buildZoneGroupedHtml(dedupedSlices));
@@ -274,7 +301,7 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
       for (const slice of group.sort((a, b) => a.y0 - b.y0)) {
         const cityName = lang === "he" ? (slice.NAME_HE || slice.data) : (slice.NAME_EN || slice.data);
         const startStr = timeFmt(slice._start);
-        const endStr = slice._end ? " \u2013 " + timeFmt(slice._end) : "";
+        const endStr = " \u2013 " + timeFmt(slice._end);
         parts.push(`<div style="padding-inline-start:12px"><bdi>${cityName}</bdi> <span dir="ltr" style="opacity:0.6">${startStr}${endStr}</span></div>`);
       }
     }
@@ -324,7 +351,7 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
           if (sortedSlices.length === 1) {
             const slice = sortedSlices[0];
             const startStr = timeFmt(slice._start);
-            const endStr = slice._end ? " \u2013 " + timeFmt(slice._end) : "";
+            const endStr = " \u2013 " + timeFmt(slice._end);
             zoneCity.push(`<div style="padding-inline-start:24px"><bdi>${cityName}</bdi> <span dir="ltr" style="opacity:0.6">${startStr}${endStr}</span></div>`);
           } else {
             zoneCity.push(
@@ -334,7 +361,7 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
               `<div class="tt-content" style="display:none">` +
               sortedSlices.map((slice) => {
                 const startStr = timeFmt(slice._start);
-                const endStr = slice._end ? " \u2013 " + timeFmt(slice._end) : "";
+                const endStr = " \u2013 " + timeFmt(slice._end);
                 return `<div dir="ltr" style="padding-inline-start:40px;opacity:0.7">${startStr}${endStr}</div>`;
               }).join("") +
               `</div>`
@@ -358,7 +385,6 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
 
   function resetBarHighlight() {
     dataGroup.selectAll(".alert-bar").attr("stroke", null).attr("stroke-width", 0);
-    dataGroup.selectAll(".alert-dot").attr("stroke", null).attr("stroke-width", 0);
   }
 
   let slicesByDay = new Map();
@@ -373,10 +399,9 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
       slicesByDay.get(dayKey).push(slice);
     }
 
-    // Render ranged alerts as bars (no per-element mouse handlers)
-    const rangedSlices = slices.filter((slice) => slice.y1 !== null);
+    // Render alerts as bars (no per-element mouse handlers)
     dataGroup.selectAll(".alert-bar")
-      .data(rangedSlices)
+      .data(slices)
       .join("rect")
       .attr("class", "alert-bar")
       .attr("x", (slice) => x(slice.day))
@@ -386,18 +411,6 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
       .attr("fill", (slice) => threatColors[slice.threat_type] || "#6366f1")
       .attr("fill-opacity", 0.5)
       .attr("rx", 1);
-
-    // Render point alerts as dots (no per-element mouse handlers)
-    const pointSlices = slices.filter((slice) => slice.y1 === null);
-    dataGroup.selectAll(".alert-dot")
-      .data(pointSlices)
-      .join("circle")
-      .attr("class", "alert-dot")
-      .attr("cx", (slice) => x(slice.day) + x.bandwidth() / 2)
-      .attr("cy", (slice) => y(slice.y0))
-      .attr("r", Math.min(x.bandwidth() / 3, 3))
-      .attr("fill", (slice) => threatColors[slice.threat_type] || "#6366f1")
-      .attr("fill-opacity", 0.7);
 
     // Invisible overlay rects per day column for merged tooltip hit-testing.
     // These sit on top of all bars/dots in z-order, capturing all mouse events.
@@ -410,7 +423,7 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
 
       const slicesUnderCursor = slicesForDay.filter((slice) => {
         const sliceStart = slice.y0 - hoverToleranceHours;
-        const sliceEnd = (slice.y1 !== null ? slice.y1 : slice.y0) + hoverToleranceHours;
+        const sliceEnd = slice.y1 + hoverToleranceHours;
         return cursorHour >= sliceStart && cursorHour <= sliceEnd;
       });
 
@@ -422,9 +435,6 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
 
     function applyClusterHighlight(clusterSet) {
       dataGroup.selectAll(".alert-bar")
-        .attr("stroke", (slice) => clusterSet.has(slice) ? "#fff" : null)
-        .attr("stroke-width", (slice) => clusterSet.has(slice) ? 1 : 0);
-      dataGroup.selectAll(".alert-dot")
         .attr("stroke", (slice) => clusterSet.has(slice) ? "#fff" : null)
         .attr("stroke-width", (slice) => clusterSet.has(slice) ? 1 : 0);
     }
@@ -471,7 +481,7 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
           pinTooltip();
           if (onClusterSelect) {
             const startMs = Math.min(...cluster.slices.map((s) => +s._start));
-            const endMs = Math.max(...cluster.slices.map((s) => +(s._end || s._start)));
+            const endMs = Math.max(...cluster.slices.map((s) => +s._end));
             onClusterSelect({ startMs, endMs });
           }
         }
@@ -487,12 +497,15 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
   });
 
 
-  update(allAlerts);
-
   // Scroll to the end so the most recent days (including today) are visible
   requestAnimationFrame(() => {
     const node = scrollDiv.node();
     node.scrollLeft = node.scrollWidth;
+  });
+
+  // Subscribe to filtered events signal
+  onSignal("filteredAlertEvents", (events) => {
+    update(events);
   });
 
   const highlightGroup = svg.append("g");
@@ -504,15 +517,15 @@ export function createTimeline(container, allAlerts, { resolveZoneName = (z) => 
     const end = new Date(endMs);
 
     for (const day of days) {
-      const dayStart = day;
-      const dayEnd = d3.timeDay.offset(day, 1);
-      if (+dayEnd <= startMs || +dayStart >= endMs) continue;
+      const dayStart = +day;
+      const dayEnd = dayStart + 86400000;
+      if (dayEnd <= startMs || dayStart >= endMs) continue;
 
       const colX = x(day);
       if (colX == null) continue;
 
-      const hourFrom = +dayStart < startMs ? toFractionalHour(start) : 0;
-      const hourTo = +dayEnd > endMs ? toFractionalHour(end) : 24;
+      const hourFrom = dayStart < startMs ? israelHourOfDay(start) : 0;
+      const hourTo = dayEnd > endMs ? israelHourOfDay(end) : 24;
 
       highlightGroup.append("rect")
         .attr("x", colX)

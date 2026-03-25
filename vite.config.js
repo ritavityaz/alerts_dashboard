@@ -43,9 +43,11 @@ function localeHtmlPlugin() {
   };
 }
 
+const isBuild = process.argv.includes("build");
+
 export default {
   plugins: [localeHtmlPlugin(), tailwindcss()],
-  base: `/${locale}/`,
+  base: isBuild ? `/${locale}/` : "/",
   build: {
     target: "es2022",
     outDir: `dist/${locale}`,

@@ -157,7 +157,7 @@ async function init() {
     document.getElementById("daily-alerts-chart"),
     {
       yFormat: d3.format(","),
-      tooltipFmt: (dataPoint) => `<strong>${d3.timeFormat("%-d/%m")(new Date(dataPoint.day_ms))}</strong><br>${formatNumber(dataPoint.total)} ${t("stats.alerts")}`,
+      tooltipFmt: (dataPoint) => `<strong>${d3.utcFormat("%-d/%m")(new Date(dataPoint.day_ms))}</strong><br>${formatNumber(dataPoint.total)} ${t("stats.alerts")}`,
       signalName: "dailyAlertCounts",
     },
   );
@@ -166,7 +166,7 @@ async function init() {
     document.getElementById("daily-shelter-chart"),
     {
       yFormat: (minutes) => `${minutes}m`,
-      tooltipFmt: (dataPoint) => `<strong>${d3.timeFormat("%-d/%m")(new Date(dataPoint.day_ms))}</strong><br>${dataPoint.total} min`,
+      tooltipFmt: (dataPoint) => `<strong>${d3.utcFormat("%-d/%m")(new Date(dataPoint.day_ms))}</strong><br>${dataPoint.total} min`,
       signalName: "dailyShelterDuration",
     },
   );

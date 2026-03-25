@@ -174,7 +174,7 @@ export function createDailyHistogram(container, { yFormat, tooltipFmt, signalNam
       .range([innerH, 0])
       .nice();
 
-    const dayFmt = d3.timeFormat("%-d/%m");
+    const dayFmt = d3.utcFormat("%-d/%m");
 
     // X axis — show ~8-12 labels max
     const tickEvery = Math.max(1, Math.floor(data.length / 10));

@@ -166,32 +166,30 @@ export function init(snapshotMinMs, snapshotMaxMs) {
   function stepDay(direction) {
     const state = store.getState();
     const isFullRange = state.startMs == null && state.endMs == null;
-    const currentStart = isFullRange ? minDate : utcMsToIsraelDate(state.startMs);
-    const currentEnd = isFullRange ? maxDate : utcMsToIsraelDate(state.endMs);
+    const DAY_MS = 86400000;
 
-    let dayStart, dayEnd;
+    let newStartMs, newEndMs;
     if (isFullRange) {
       if (direction === 1) {
-        dayStart = d3.timeDay(minDate);
-        dayEnd = d3.timeDay.offset(dayStart, 1);
+        newStartMs = _snapshotMinMs;
+        newEndMs = _snapshotMinMs + DAY_MS;
       } else {
-        dayEnd = d3.timeDay.ceil(maxDate);
-        dayStart = d3.timeDay.offset(dayEnd, -1);
+        newEndMs = Math.max(_snapshotMaxMs, Date.now());
+        newStartMs = newEndMs - DAY_MS;
       }
     } else {
-      dayStart = d3.timeDay.offset(d3.timeDay(currentStart), direction);
-      dayEnd = d3.timeDay.offset(d3.timeDay(currentEnd), direction);
+      const span = state.endMs - state.startMs;
+      newStartMs = state.startMs + direction * DAY_MS;
+      newEndMs = newStartMs + span;
     }
 
-    let lowHour = dateToSlider(dayStart);
-    let highHour = dateToSlider(dayEnd);
-    if (lowHour < 0) { lowHour = 0; highHour = Math.min(24, totalHours); }
-    if (highHour > totalHours) { highHour = totalHours; lowHour = Math.max(highHour - 24, 0); }
+    // Clamp to bounds
+    const boundsMin = _snapshotMinMs;
+    const boundsMax = Math.max(_snapshotMaxMs, Date.now());
+    if (newStartMs < boundsMin) { newStartMs = boundsMin; newEndMs = newStartMs + (state.endMs - state.startMs || DAY_MS); }
+    if (newEndMs > boundsMax) { newEndMs = boundsMax; newStartMs = Math.max(boundsMin, newEndMs - (state.endMs - state.startMs || DAY_MS)); }
 
-    store.update({
-      startMs: sliderToUtcMs(lowHour),
-      endMs: sliderToUtcMs(highHour),
-    });
+    store.update({ startMs: newStartMs, endMs: newEndMs });
   }
 
   document.getElementById("step-prev")?.addEventListener("click", () => stepDay(-1));
@@ -201,30 +199,30 @@ export function init(snapshotMinMs, snapshotMaxMs) {
   function stepHour(direction) {
     const state = store.getState();
     const isFullRange = state.startMs == null && state.endMs == null;
-    const low = isFullRange ? 0 : Math.max(0, dateToSlider(utcMsToIsraelDate(state.startMs)));
-    const high = isFullRange ? totalHours : Math.min(totalHours, dateToSlider(utcMsToIsraelDate(state.endMs)));
-    const span = high - low;
+    const HOUR_MS = 3600000;
 
-    let newLow, newHigh;
+    let newStartMs, newEndMs;
     if (isFullRange) {
       if (direction === 1) {
-        newLow = 0;
-        newHigh = Math.min(1, totalHours);
+        newStartMs = _snapshotMinMs;
+        newEndMs = _snapshotMinMs + HOUR_MS;
       } else {
-        newHigh = totalHours;
-        newLow = Math.max(totalHours - 1, 0);
+        newEndMs = Math.max(_snapshotMaxMs, Date.now());
+        newStartMs = newEndMs - HOUR_MS;
       }
     } else {
-      newLow = low + direction;
-      newHigh = high + direction;
-      if (newLow < 0) { newLow = 0; newHigh = Math.min(span, totalHours); }
-      if (newHigh > totalHours) { newHigh = totalHours; newLow = Math.max(totalHours - span, 0); }
+      const span = state.endMs - state.startMs;
+      newStartMs = state.startMs + direction * HOUR_MS;
+      newEndMs = newStartMs + span;
     }
 
-    store.update({
-      startMs: sliderToUtcMs(newLow),
-      endMs: sliderToUtcMs(newHigh),
-    });
+    // Clamp to bounds
+    const boundsMin = _snapshotMinMs;
+    const boundsMax = Math.max(_snapshotMaxMs, Date.now());
+    if (newStartMs < boundsMin) { newStartMs = boundsMin; newEndMs = newStartMs + (state.endMs - state.startMs || HOUR_MS); }
+    if (newEndMs > boundsMax) { newEndMs = boundsMax; newStartMs = Math.max(boundsMin, newEndMs - (state.endMs - state.startMs || HOUR_MS)); }
+
+    store.update({ startMs: newStartMs, endMs: newEndMs });
   }
 
   document.getElementById("step-prev-hr")?.addEventListener("click", () => stepHour(-1));

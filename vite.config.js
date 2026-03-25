@@ -45,6 +45,7 @@ function localeHtmlPlugin() {
 
 export default {
   plugins: [localeHtmlPlugin(), tailwindcss()],
+  base: `/${locale}/`,
   build: {
     target: "es2022",
     outDir: `dist/${locale}`,

@@ -6,6 +6,7 @@
  */
 
 import * as d3 from "d3";
+import { t } from "./i18n.js";
 import { onSignal } from "./queries.js";
 import * as slider from "./slider.js";
 
@@ -108,16 +109,14 @@ export function quietestHour(eventsArr, from, to) {
 /**
  * Format a duration in ms as a human-readable string (e.g. "2h 30m", "3d 5h").
  */
+const RLM = "\u200f", SP = "\u2002";
+
 export function formatDuration(ms) {
+  const H = t("duration.h"), M = t("duration.m");
   const totalMin = Math.floor(ms / 60000);
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
-  if (h >= 24) {
-    const d = Math.floor(h / 24);
-    const rh = h % 24;
-    return rh > 0 ? `${d}d ${rh}h` : `${d}d`;
-  }
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  return h > 0 ? `${RLM}${h} ${H}${SP}${m} ${M}` : `${RLM}${m} ${M}`;
 }
 
 /**
@@ -138,9 +137,10 @@ export function formatGapRange(gap) {
  */
 export function formatQuietestRange(q) {
   if (!q) return { range: "—", dur: "" };
+  const H = t("duration.h"), M = t("duration.m");
   const pad = (n) => String(n).padStart(2, "0");
   const h = Math.floor(q.minutes / 60), m = q.minutes % 60;
-  const dur = h > 0 ? `${h}h${m > 0 ? ` ${m}m` : ""}` : `${m}m`;
+  const dur = h > 0 ? `${RLM}${h} ${H}${m > 0 ? `${SP}${m} ${M}` : ""}` : `${RLM}${m} ${M}`;
   return { range: `${pad(q.startH)}:${pad(q.startM)}–${pad(q.endH)}:${pad(q.endM)}`, dur };
 }
 

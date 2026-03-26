@@ -95,16 +95,17 @@ function buildDurationStacked(rows, nameKey, metaKey) {
   });
 }
 
+const RLM = "\u200f", SP = "\u2002";
+
 function fmtDurationShort(minutes) {
-  if (minutes < 60) return `${minutes}m`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
+  const D = t("duration.d"), H = t("duration.h"), M = t("duration.m");
+  if (minutes < 60) return `${RLM}${minutes} ${M}`;
+  const h = Math.floor(minutes / 60), m = minutes % 60;
   if (h >= 24) {
-    const d = Math.floor(h / 24);
-    const rh = h % 24;
-    return rh > 0 ? `${d}d ${rh}h` : `${d}d`;
+    const d = Math.floor(h / 24), rh = h % 24;
+    return rh > 0 ? `${RLM}${d} ${D}${SP}${rh} ${H}` : `${RLM}${d} ${D}`;
   }
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  return m > 0 ? `${RLM}${h} ${H}${SP}${m} ${M}` : `${RLM}${h} ${H}`;
 }
 
 /**

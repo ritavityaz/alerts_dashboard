@@ -2,6 +2,7 @@ import * as d3 from "d3";
 import { lang, t } from "./i18n.js";
 import { showTooltip, hideTooltip, pinTooltip, unpinTooltip, isTooltipPinned, setOnUnpin } from "./tooltip.js";
 import { onSignal } from "./queries.js";
+import { getState } from "./store.js";
 
 /**
  * Israel-timezone helpers.
@@ -59,10 +60,40 @@ function dayslice(alerts) {
   return slices;
 }
 
+/** Map each point-in-time event to a day + hour for rendering as a tick mark. */
+function dayslicePoints(events) {
+  const points = [];
+  for (const evt of events) {
+    if (evt.event_type === "other") continue;
+    const d = new Date(evt.ts);
+    points.push({ ...evt, day: israelDay(d), yHour: israelHourOfDay(d) });
+  }
+  return points;
+}
+
+const eventTypeColors = {
+  alert_missiles: "#f82323",
+  alert_drones: "#290691",
+  alert_infiltration: "#fbbf24",
+  alert: "#ffffff",
+  early_warning: "#fbbf24",
+  resolved: "#4ade80",
+  weak_resolved: "#4ade80",
+};
+
+/** Resolve tick color: alerts match their threat type (vivid), others by event_type. */
+function eventTickColor(point) {
+  if (point.event_type === "alert" && point.threat_type) {
+    return eventTypeColors["alert_" + point.threat_type] || eventTypeColors.alert;
+  }
+  return eventTypeColors[point.event_type] || "#94a3b8";
+}
+
 const threatColors = {
-  missiles: "#ef4444",
+  missiles: "#fb3838",
   drones: "#8b5cf6",
   infiltration: "#f59e0b",
+  false_alarm: "#64748b",
 };
 
 export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) => z, onClusterSelect = null } = {}) {
@@ -81,6 +112,7 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
     missiles: "timeline.missiles",
     drones: "timeline.drones",
     infiltration: "timeline.infiltration",
+    false_alarm: "timeline.falseAlarm",
   };
   const legendDiv = d3.select(container).append("div")
     .attr("class", "flex gap-4 px-3 pt-3 text-xs justify-end");
@@ -96,8 +128,42 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
     legendLabels.push({ el: label, key: threatI18nKeys[type] });
   }
 
+  // Event-type line legend (shown when viewing a single city)
+  const eventLegendI18n = {
+    early_warning: "timeline.evWarning",
+    alert: "timeline.evAlert",
+    resolved: "timeline.evResolved",
+  };
+  const eventLegendColors = {
+    early_warning: eventTypeColors.early_warning,
+    alert: eventTypeColors.alert,
+    resolved: eventTypeColors.resolved,
+  };
+  const eventLegendDiv = d3.select(container).append("div")
+    .attr("class", "flex gap-4 px-3 pb-1 text-xs justify-end")
+    .style("opacity", "0.6")
+    .style("display", "none");
+  const eventLegendLabels = [];
+  for (const [type, key] of Object.entries(eventLegendI18n)) {
+    const item = eventLegendDiv.append("span").attr("class", "flex items-center gap-1.5");
+    item.append("span")
+      .style("width", "10px").style("height", "2px")
+      .style("background", eventLegendColors[type])
+      .style("display", "inline-block");
+    const label = item.append("span").text(t(key))
+      .style("color", "#64748b");
+    eventLegendLabels.push({ el: label, key });
+  }
+
+  function showEventLegend(visible) {
+    eventLegendDiv.style("display", visible ? null : "none");
+  }
+
   function updateLegendLabels() {
     for (const { el, key } of legendLabels) {
+      el.text(t(key));
+    }
+    for (const { el, key } of eventLegendLabels) {
       el.text(t(key));
     }
   }
@@ -140,7 +206,7 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
   // X-axis (top) — inside scrollable SVG
   svg.append("g")
     .attr("transform", `translate(0,${margin.top})`)
-    .call(d3.axisTop(x).tickFormat(d3.timeFormat("%-d")).tickSize(0))
+    .call(d3.axisTop(x).tickFormat((d) => new Date(+d + ISRAEL_OFFSET_MS).getUTCDate()).tickSize(0))
     .call((g) => g.select(".domain").remove())
     .call((g) => g.selectAll("text")
       .attr("fill", "#64748b")
@@ -148,7 +214,7 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
     );
 
   // Month labels
-  const monthStarts = days.filter((d, i) => i === 0 || d.getMonth() !== days[i - 1].getMonth());
+  const monthStarts = days.filter((d, i) => i === 0 || new Date(+d + ISRAEL_OFFSET_MS).getUTCMonth() !== new Date(+days[i - 1] + ISRAEL_OFFSET_MS).getUTCMonth());
   svg.selectAll(".month-label")
     .data(monthStarts)
     .join("text")
@@ -190,8 +256,12 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
     .attr("stroke-dasharray", "2,2");
 
   const dataGroup = svg.append("g");
+  const eventTickGroup = svg.append("g"); // Individual event ticks (city-level only)
   const overlayGroup = svg.append("g"); // Separate group ensures overlays always sit on top of bars/dots
-  const timeFmt = d3.timeFormat("%H:%M");
+  const timeFmt = (d) => {
+    const il = new Date(+d + ISRAEL_OFFSET_MS);
+    return `${String(il.getUTCHours()).padStart(2, "0")}:${String(il.getUTCMinutes()).padStart(2, "0")}`;
+  };
 
   /**
    * Given a few "seed" slices under the cursor, expand outward to collect
@@ -233,6 +303,64 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
    */
   const ZONE_GROUP_THRESHOLD = 5;
 
+  const eventTypeI18n = {
+    alert: "timeline.evAlert",
+    early_warning: "timeline.evWarning",
+    resolved: "timeline.evResolved",
+    weak_resolved: "timeline.evWeakResolved",
+  };
+
+  /** Build event breakdown HTML from raw incident events for the given slices. */
+  function buildEventBreakdownHtml(slices) {
+    const allEvts = [];
+    const seen = new Set();
+    for (const slice of slices) {
+      const key = slice.data + "|" + slice.group_id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const evts = eventsByGroup.get(key);
+      if (evts) allEvts.push(...evts);
+    }
+    if (allEvts.length === 0) return "";
+
+    // In city view: list individual events with timestamps and colored lines
+    if (getState().ctx === "city") {
+      const sorted = allEvts.slice().sort((a, b) => a.ts - b.ts);
+      const lines = sorted
+        .filter((evt) => evt.event_type !== "other")
+        .map((evt) => {
+          const color = eventTickColor(evt);
+          const label = t(eventTypeI18n[evt.event_type] || "");
+          const time = timeFmt(new Date(evt.ts));
+          return `<div style="padding-inline-start:4px;font-size:10px;line-height:1.5">` +
+            `<span style="display:inline-block;width:10px;height:2px;background:${color};margin-inline-end:5px;vertical-align:middle"></span>` +
+            `<span dir="ltr" style="opacity:0.6">${time}</span> ${label}</div>`;
+        });
+      return `<div style="margin-top:4px;border-top:1px solid rgba(255,255,255,0.1);padding-top:3px">${lines.join("")}</div>`;
+    }
+
+    // Otherwise: compact summary
+    const counts = { alert: 0, early_warning: 0, resolved: 0, weak_resolved: 0 };
+    for (const evt of allEvts) {
+      if (evt.event_type in counts) counts[evt.event_type]++;
+    }
+    const total = counts.alert + counts.early_warning + counts.resolved + counts.weak_resolved;
+    if (total === 0) return "";
+
+    const parts = [];
+    if (counts.alert > 0) {
+      parts.push(`${counts.alert} ${t(counts.alert === 1 ? "timeline.evAlert" : "timeline.evAlerts")}`);
+    }
+    const warnings = counts.early_warning + counts.weak_resolved;
+    if (warnings > 0) {
+      parts.push(`${warnings} ${t(warnings === 1 ? "timeline.evWarning" : "timeline.evWarnings")}`);
+    }
+    if (counts.resolved > 0) {
+      parts.push(`${counts.resolved} ${t("timeline.evResolved")}`);
+    }
+    return `<div style="opacity:0.45;font-size:9px;margin-top:3px">${total} ${t("timeline.evEvents")}: ${parts.join(", ")}</div>`;
+  }
+
   function buildMergedTooltipHtml(overlappingSlices) {
     // Single alert — original simple format
     if (overlappingSlices.length === 1) {
@@ -241,7 +369,7 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
       const threatLabel = t(threatI18nKeys[slice.threat_type]);
       const startStr = timeFmt(slice._start);
       const endStr = " \u2013 " + timeFmt(slice._end);
-      return `<strong><bdi>${cityName}</bdi></strong><br>${threatLabel}<br><span dir="ltr">${startStr}${endStr}</span>`;
+      return `<strong><bdi>${cityName}</bdi></strong><br>${threatLabel}<br><span dir="ltr">${startStr}${endStr}</span>${buildEventBreakdownHtml([slice])}`;
     }
 
     // Deduplicate slices by city + start time
@@ -262,7 +390,10 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
     // Compute cluster timespan from all slices
     const clusterStart = new Date(Math.min(...overlappingSlices.map((s) => +s._start)));
     const clusterEnd = new Date(Math.max(...overlappingSlices.map((s) => +s._end)));
-    const dateFmt = d3.timeFormat("%-d/%m");
+    const dateFmt = (d) => {
+      const il = new Date(+d + ISRAEL_OFFSET_MS);
+      return `${il.getUTCDate()}/${il.getUTCMonth() + 1}`;
+    };
     const spanStart = `${dateFmt(clusterStart)} ${timeFmt(clusterStart)}`;
     const spanEnd = `${dateFmt(clusterEnd)} ${timeFmt(clusterEnd)}`;
     const timespan = +clusterStart === +clusterEnd ? spanStart
@@ -270,7 +401,7 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
       : `${spanStart} \u2013 ${spanEnd}`;
 
     const htmlParts = [];
-    htmlParts.push(`<div style="margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid rgba(255,255,255,0.15)"><div dir="ltr" style="font-size:11px"><strong>${timespan}</strong></div><div style="opacity:0.5;font-size:10px;margin-top:1px">${dedupedSlices.length} ${t("timeline.alerts")} &middot; ${uniqueCities.size} ${t("timeline.cities")}</div></div>`);
+    htmlParts.push(`<div style="margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid rgba(255,255,255,0.15)"><div dir="ltr" style="font-size:11px"><strong>${timespan}</strong></div><div style="opacity:0.5;font-size:10px;margin-top:1px">${dedupedSlices.length} ${t("timeline.alerts")} &middot; ${uniqueCities.size} ${t("timeline.cities")}</div>${buildEventBreakdownHtml(dedupedSlices)}</div>`);
 
     if (useZoneGrouping) {
       htmlParts.push(buildZoneGroupedHtml(dedupedSlices));
@@ -506,6 +637,39 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
   // Subscribe to filtered events signal
   onSignal("filteredAlertEvents", (events) => {
     update(events);
+  });
+
+  // ── Individual event ticks + lookup for tooltips ─────────
+  let eventsByGroup = new Map(); // "data|group_id" → [{ts, event_type, ...}]
+
+  onSignal("filteredIncidentEvents", (rawEvents) => {
+    eventsByGroup = new Map();
+    for (const evt of rawEvents) {
+      const key = evt.data + "|" + evt.group_id;
+      if (!eventsByGroup.has(key)) eventsByGroup.set(key, []);
+      eventsByGroup.get(key).push(evt);
+    }
+
+    // Render tick marks only when viewing a single city
+    const isCity = getState().ctx === "city";
+    showEventLegend(isCity);
+    if (isCity) {
+      const points = dayslicePoints(rawEvents);
+      eventTickGroup.selectAll(".event-tick")
+        .data(points, (d, i) => `${+d.day}-${d.data}-${d.group_id}-${i}`)
+        .join("line")
+        .attr("class", "event-tick")
+        .attr("x1", (d) => x(d.day))
+        .attr("x2", (d) => x(d.day) + x.bandwidth())
+        .attr("y1", (d) => y(d.yHour))
+        .attr("y2", (d) => y(d.yHour))
+        .attr("stroke", (d) => eventTickColor(d))
+        .attr("stroke-width", 0.55)
+        .attr("stroke-opacity", 0.9)
+        .attr("pointer-events", "none");
+    } else {
+      eventTickGroup.selectAll(".event-tick").remove();
+    }
   });
 
   const highlightGroup = svg.append("g");

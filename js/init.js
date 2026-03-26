@@ -57,10 +57,6 @@ async function init() {
   // ── Initialize filters (needs geojson for city/zone lookups) ──
   filters.init(geojson);
 
-  // ── Subtitle ──
-  const subtitle = document.getElementById("subtitle");
-  if (subtitle) subtitle.textContent = `${formatNumber(snapshotTotalAlerts)} ${t("header.totalSuffix")}`;
-
   // ── Initialize map ──
   const mapContainer = document.getElementById("map-container");
   initMap(mapContainer, geojson, initialCountsByCity);
@@ -165,8 +161,8 @@ async function init() {
   createDailyHistogram(
     document.getElementById("daily-shelter-chart"),
     {
-      yFormat: (minutes) => `${minutes}m`,
-      tooltipFmt: (dataPoint) => `<strong>${d3.utcFormat("%-d/%m")(new Date(dataPoint.day_ms))}</strong><br>${dataPoint.total} min`,
+      yFormat: (minutes) => `${minutes}${t("duration.m")}`,
+      tooltipFmt: (dataPoint) => `<strong>${d3.utcFormat("%-d/%m")(new Date(dataPoint.day_ms))}</strong><br>${dataPoint.total} ${t("duration.m")}`,
       signalName: "dailyShelterDuration",
     },
   );

@@ -13,6 +13,7 @@ import {
   queryStats,
   querySparkline,
   queryFilteredEvents,
+  queryFilteredIncidentEvents,
   queryEventsByZone,
   queryDailyAlertCounts,
   queryDailyShelterDuration,
@@ -72,6 +73,10 @@ const queryDefinitions = {
   filteredAlertEvents: {
     depends: ["threat", "ctx", "zone", "city"],
     run: (filters) => queryFilteredEvents(filters.threat, filters.ctx, filters.zone, filters.city),
+  },
+  filteredIncidentEvents: {
+    depends: ["threat", "ctx", "zone", "city"],
+    run: (filters) => queryFilteredIncidentEvents(filters.threat, filters.ctx, filters.zone, filters.city),
   },
   alertDurationByZone: {
     depends: ["startMs", "endMs"],

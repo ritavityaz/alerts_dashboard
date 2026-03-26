@@ -48,6 +48,7 @@
     "drones": "Drones",
     "terrorists": "Infiltrations",
     "infiltration": "Infiltrations",
+    "falseAlarm": "False Alarm",
     "allPrefix": "All",
     "missilePrefix": "Missile",
     "dronePrefix": "Drone",
@@ -55,7 +56,14 @@
     "alertsSuffix": "Alerts",
     "inWord": "in",
     "alerts": "alerts",
-    "cities": "cities"
+    "cities": "cities",
+    "evAlert": "alert",
+    "evAlerts": "alerts",
+    "evWarning": "warning",
+    "evWarnings": "warnings",
+    "evResolved": "resolved",
+    "evWeakResolved": "stay nearby",
+    "evEvents": "events"
   },
   "quietPeriods": {
     "longestQuiet": "Longest Quiet",
@@ -64,6 +72,11 @@
     "past3days": "3 days",
     "past7days": "7 days",
     "sinceStart": "All time"
+  },
+  "duration": {
+    "d": "d",
+    "h": "h",
+    "m": "m"
   },
   "heatmap": {
     "title": "Avg. Peak Hours",

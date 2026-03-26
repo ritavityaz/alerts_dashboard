@@ -259,7 +259,7 @@ export async function queryFilteredEvents(threat, ctx, zone, city) {
  * Returns array of {zone, category, start_ms, end_ms, cities} sorted by zone total desc.
  */
 export async function queryEventsByZone(startMs, endMs) {
-  const clauses = ["zone_en != ''"];
+  const clauses = ["zone_en != ''", "threat_type != 'false_alarm'"];
   if (startMs != null) clauses.push(`end_ms >= ${startMs}`);
   if (endMs != null) clauses.push(`start_ms <= ${endMs}`);
   const where = "WHERE " + clauses.join(" AND ");
@@ -332,7 +332,7 @@ export async function queryDailyAlertCounts(startMs, endMs, ctx, zone, city) {
  * Returns array of {day_ms, minutes}.
  */
 export async function queryDailyShelterDuration(startMs, endMs, ctx, zone, city) {
-  const clauses = [];
+  const clauses = ["threat_type != 'false_alarm'"];
   if (startMs != null) clauses.push(`end_ms >= ${startMs}`);
   if (endMs != null) clauses.push(`start_ms <= ${endMs}`);
   if (ctx === "zone" && zone && zone !== "all") {
@@ -400,8 +400,52 @@ export async function queryDailyShelterDuration(startMs, endMs, ctx, zone, city)
   return rows;
 }
 
+/**
+ * Get individual events within incident groups (for timeline tick marks).
+ * Returns array of {data, ts, event_type, category_desc, threat_type, group_id}.
+ */
+export async function queryFilteredIncidentEvents(threat, ctx, zone, city) {
+  const clauses = [];
+  if (threat && threat !== "all") {
+    clauses.push(`threat_type = '${threatForCategory(threat)}'`);
+  }
+  if (ctx === "zone" && zone && zone !== "all") {
+    clauses.push(`zone_en = '${escapeSql(zone)}'`);
+  } else if (ctx === "city" && city) {
+    clauses.push(`data = '${escapeSql(city)}'`);
+  }
+  const where = clauses.length > 0 ? "WHERE " + clauses.join(" AND ") : "";
+
+  const result = await conn.query(`
+    SELECT ie.data, ie.ts, ie.event_type, ie.category_desc, ie.threat_type, ie.group_id
+    FROM incident_events ie
+    INNER JOIN (SELECT DISTINCT data, group_id FROM incidents ${where}) inc
+      ON ie.data = inc.data AND ie.group_id = inc.group_id
+    ORDER BY ie.ts
+  `);
+
+  const rows = [];
+  const dataCol = result.getChild("data");
+  const tsCol = result.getChild("ts");
+  const etCol = result.getChild("event_type");
+  const descCol = result.getChild("category_desc");
+  const ttCol = result.getChild("threat_type");
+  const gidCol = result.getChild("group_id");
+  for (let i = 0; i < result.numRows; i++) {
+    rows.push({
+      data: dataCol.get(i),
+      ts: Number(tsCol.get(i)),
+      event_type: etCol.get(i),
+      category_desc: descCol.get(i),
+      threat_type: ttCol.get(i),
+      group_id: Number(gidCol.get(i)),
+    });
+  }
+  return rows;
+}
+
 export async function queryEventsByCityInZone(zone, startMs, endMs) {
-  const clauses = [`zone_en = '${escapeSql(zone)}'`];
+  const clauses = [`zone_en = '${escapeSql(zone)}'`, "threat_type != 'false_alarm'"];
   if (startMs != null) clauses.push(`end_ms >= ${startMs}`);
   if (endMs != null) clauses.push(`start_ms <= ${endMs}`);
   const where = "WHERE " + clauses.join(" AND ");

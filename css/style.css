@@ -108,7 +108,6 @@ html {
 [data-field="dur"],
 [data-field="range"] {
   direction: ltr;
-  text-align: start;
 }
 
 /* ── Filter chips ── */

@@ -12,15 +12,15 @@ import * as d3 from "d3";
 import { t, lang, formatNumber } from "./i18n.js";
 import * as store from "./store.js";
 import * as queries from "./queries.js";
-import { mountAll } from "./framework.js";
-import { initDB } from "./db.js";
+import { mountAll, isMobile, onViewportChange } from "./framework.js";
+import { initDB, queryAllIncidents } from "./db.js";
 import { onSignal } from "./queries.js";
 import * as filters from "./filters.js";
 import * as slider from "./slider.js";
 import { initMap } from "./map.js";
 import { createTimeline } from "./timeline.js";
 import { createHeatmap } from "./heatmap.js";
-import { createZoneDurationChart, createDailyHistogram } from "./charts.js";
+import { createZoneDurationChart, createDailyHistogram, threatColors as threatColorsChart, threatI18nKeys as threatI18nChart, CATEGORIES } from "./charts.js";
 import "./stats.js"; // registers statsPanel component via defineComponent
 import { initQuietPeriods } from "./quiet.js";
 
@@ -143,6 +143,25 @@ async function init() {
   const heatmapContainer = document.getElementById("heatmap-container");
   const heatmapChart = createHeatmap(heatmapContainer);
 
+  // ── Move quiet stats into heatmap (desktop) or timeline (mobile) ──
+  const quietTemplate = document.getElementById("quiet-stats-template");
+  if (quietTemplate) {
+    const quietNode = quietTemplate.content.cloneNode(true);
+    const timelineContainer = document.getElementById("timeline-container");
+    const target = isMobile() ? timelineContainer : heatmapContainer;
+    target.appendChild(quietNode);
+
+    // Re-parent on viewport change
+    onViewportChange((mobile) => {
+      const quietEl = document.getElementById("stats-section");
+      if (!quietEl) return;
+      const newParent = mobile ? timelineContainer : heatmapContainer;
+      if (quietEl.parentElement !== newParent) {
+        newParent.appendChild(quietEl);
+      }
+    });
+  }
+
   // ── Create charts (each subscribes to its own signal internally) ──
   createZoneDurationChart(
     document.getElementById("duration-chart"),
@@ -153,7 +172,13 @@ async function init() {
     document.getElementById("daily-alerts-chart"),
     {
       yFormat: d3.format(","),
-      tooltipFmt: (dataPoint) => `<strong>${d3.utcFormat("%-d/%m")(new Date(dataPoint.day_ms))}</strong><br>${formatNumber(dataPoint.total)} ${t("stats.alerts")}`,
+      tooltipFmt: (d) => {
+        const date = `<strong>${d3.utcFormat("%-d/%m")(new Date(d.day_ms))}</strong>`;
+        const lines = CATEGORIES
+          .filter((cat) => d.byCategory[cat])
+          .map((cat) => `<span style="display:inline-block;width:8px;height:8px;background:${threatColorsChart[cat]};border-radius:1px;margin-inline-end:4px;vertical-align:middle"></span>${t(threatI18nChart[cat])}: ${formatNumber(d.byCategory[cat])}`);
+        return `${date}<br>${formatNumber(d.total)} ${t("stats.alerts")}` + (lines.length ? `<div style="margin-top:4px;font-size:10px;line-height:1.6">${lines.join("<br>")}</div>` : "");
+      },
       signalName: "dailyAlertCounts",
     },
   );
@@ -167,22 +192,9 @@ async function init() {
     },
   );
 
-  // ── Wire heatmap — depends on filteredAlertEvents ──
-  onSignal("filteredAlertEvents", (events) => {
-    const now = new Date();
-    const fmt = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jerusalem", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", hour12: false });
-    const p = {}; for (const { type, value } of fmt.formatToParts(now)) p[type] = +value;
-    const offsetMs = Date.UTC(p.year, p.month - 1, p.day, p.hour === 24 ? 0 : p.hour, p.minute) - (+now - (+now % 60000));
-    const localMs = +now + offsetMs;
-    const todayStart = new Date(localMs - (localMs % 86400000) - offsetMs);
-    const threeDaysAgo = new Date(+todayStart - 3 * 86400000);
-    const sevenDaysAgo = new Date(+todayStart - 7 * 86400000);
-
-    heatmapChart?.update({
-      "3d": { events, from: threeDaysAgo, to: todayStart },
-      "7d": { events, from: sevenDaysAgo, to: todayStart },
-      "all": { events, from: slider.getMinDate() || todayStart, to: todayStart },
-    });
+  // ── Wire heatmap — depends on heatmapBins (pre-binned by DuckDB) ──
+  onSignal("heatmapBins", (binData) => {
+    heatmapChart?.update(binData);
   });
 
   // ── Quiet periods — subscribes to filteredAlertEvents internally ──
@@ -193,6 +205,10 @@ async function init() {
 
   // ── Mount framework-driven components (statsPanel) ──
   mountAll();
+
+  // ── Precompute timeline day-slices for all incidents (one-time cost) ──
+  const allIncidents = await queryAllIncidents();
+  timeline.setSliceIndex(allIncidents);
 
   // ── Run all queries for initial render ──
   await queries.runAffectedQueries(null);

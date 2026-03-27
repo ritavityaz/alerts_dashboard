@@ -14,10 +14,12 @@ import {
   querySparkline,
   queryFilteredEvents,
   queryFilteredIncidentEvents,
+  queryHeatmapBins,
   queryEventsByZone,
   queryDailyAlertCounts,
   queryDailyShelterDuration,
 } from "./db.js";
+import { israelDayStartUtc } from "./tz.js";
 
 // ── Signal system ──
 
@@ -41,12 +43,36 @@ export function onSignal(signalName, listener) {
   return () => signalListeners.get(signalName)?.delete(listener);
 }
 
+// ── Batched signal emission ──
+// Defers listener calls to a single requestAnimationFrame so that multiple
+// signals emitted in the same microtask (e.g. after Promise.all resolves)
+// trigger only one combined paint instead of serialized re-renders.
+
+const pendingSignals = new Map();  // signalName → value (last wins)
+let rafScheduled = false;
+
+function flushSignals() {
+  rafScheduled = false;
+  const batch = new Map(pendingSignals);
+  pendingSignals.clear();
+  for (const [signalName, value] of batch) {
+    const listeners = signalListeners.get(signalName);
+    if (!listeners) continue;
+    for (const listener of listeners) {
+      listener(value);
+    }
+  }
+}
+
 function emitSignal(signalName, value) {
+  // Skip if the value is the same reference — avoids redundant re-renders
+  // (e.g. reset returning the same cached result that's already displayed).
+  if (signalValues.get(signalName) === value) return;
   signalValues.set(signalName, value);
-  const listeners = signalListeners.get(signalName);
-  if (!listeners) return;
-  for (const listener of listeners) {
-    listener(value);
+  pendingSignals.set(signalName, value);
+  if (!rafScheduled) {
+    rafScheduled = true;
+    requestAnimationFrame(flushSignals);
   }
 }
 
@@ -73,6 +99,19 @@ const queryDefinitions = {
   filteredAlertEvents: {
     depends: ["threat", "ctx", "zone", "city"],
     run: (filters) => queryFilteredEvents(filters.threat, filters.ctx, filters.zone, filters.city),
+  },
+  heatmapBins: {
+    depends: ["threat", "ctx", "zone", "city"],
+    run: async (filters) => {
+      const { threat, ctx, zone, city } = filters;
+      const todayStartMs = israelDayStartUtc(Date.now());
+      const [bins3d, bins7d, binsAll] = await Promise.all([
+        queryHeatmapBins(threat, ctx, zone, city, todayStartMs - 3 * 86400000, todayStartMs),
+        queryHeatmapBins(threat, ctx, zone, city, todayStartMs - 7 * 86400000, todayStartMs),
+        queryHeatmapBins(threat, ctx, zone, city, 0, todayStartMs),
+      ]);
+      return { "3d": bins3d, "7d": bins7d, all: binsAll };
+    },
   },
   filteredIncidentEvents: {
     depends: ["threat", "ctx", "zone", "city"],

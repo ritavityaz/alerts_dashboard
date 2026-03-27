@@ -101,11 +101,15 @@ export function initMap(container, geojson, initialCountsByCity) {
       hideTooltip();
     });
 
-    // Click → select city
+    // Click → show tooltip (for touch devices) + select city
     map.on("click", "zone-fill", (event) => {
       const properties = event.features[0].properties;
       const featureState = map.getFeatureState({ source: "zones", id: properties.name_he });
       if ((featureState?.count || 0) > 0) {
+        const name = lang === "he" ? properties.name_he : properties.name_en;
+        const zone = lang === "he" ? properties.zone_he : properties.zone_en;
+        showTooltip(event.originalEvent.pageX, event.originalEvent.pageY,
+          `<strong>${name}</strong><br>${zone}<br>${formatNumber(featureState.count)} ${t("map.alerts")}`);
         selectCityFromMap(properties.name_he);
       }
     });

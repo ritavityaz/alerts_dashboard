@@ -170,61 +170,62 @@
     <div id="timeline-section"></div>
     <h2 id="timeline-title" class="text-lg font-bold mt-8 mb-3" data-i18n="timeline.title">Alert Timeline</h2>
     <div id="timeline-heatmap-row" class="flex flex-col sm:flex-row gap-3">
-      <div id="timeline-container" data-component="alertTimeline" class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden flex-1 min-w-0"></div>
-      <!-- TODO: re-enable heatmap after incident migration stabilizes -->
-      <div id="heatmap-container" data-component="alertHeatmap" class="bg-gray-900 border border-gray-800 rounded-lg shrink-0 hidden"></div>
+      <div id="timeline-container" data-component="alertTimeline" class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden flex-1 min-w-0 order-2 sm:order-1"></div>
+      <div id="heatmap-container" data-component="alertHeatmap" class="bg-gray-900 border border-gray-800 rounded-lg shrink-0 w-full sm:w-72 flex flex-col items-center order-1 sm:order-2"></div>
     </div>
 
-    <!-- ── Quiet periods ── -->
-    <div id="stats-section" class="bg-gray-900 border border-gray-800 rounded-lg p-4 mt-3">
-      <div id="quiet-stats-inner" class="flex flex-col sm:flex-row gap-4 sm:gap-8">
-        <div>
-          <div class="text-gray-400 text-sm font-semibold mb-2" data-i18n="quietPeriods.longestQuiet">Longest Quiet</div>
-          <div class="flex gap-6">
-            <div id="stat-quiet-today" class="text-sm">
-              <div class="text-gray-500 text-xs" data-i18n="quietPeriods.today">Today</div>
-              <div class="font-bold" dir="ltr" data-field="dur">—</div>
-              <div class="text-gray-500 text-xs" data-field="range"></div>
-            </div>
-            <div id="stat-quiet-3d" class="text-sm">
-              <div class="text-gray-500 text-xs" data-i18n="quietPeriods.past3days">3 days</div>
-              <div class="font-bold" dir="ltr" data-field="dur">—</div>
-              <div class="text-gray-500 text-xs" data-field="range"></div>
-            </div>
-            <div id="stat-quiet-7d" class="text-sm">
-              <div class="text-gray-500 text-xs" data-i18n="quietPeriods.past7days">7 days</div>
-              <div class="font-bold" dir="ltr" data-field="dur">—</div>
-              <div class="text-gray-500 text-xs" data-field="range"></div>
-            </div>
-            <div id="stat-quiet-all" class="text-sm">
-              <div class="text-gray-500 text-xs" data-i18n="quietPeriods.sinceStart">All time</div>
-              <div class="font-bold" dir="ltr" data-field="dur">—</div>
-              <div class="text-gray-500 text-xs" data-field="range"></div>
+    <!-- ── Quiet periods (inside heatmap container via JS) ── -->
+    <template id="quiet-stats-template">
+      <div id="stats-section" class="w-full px-3 pb-3 text-[11px]">
+        <div id="quiet-stats-inner" class="flex flex-col gap-2">
+          <div>
+            <div class="text-gray-400 text-[10px] font-semibold mb-0.5" data-i18n="quietPeriods.quietestHour">Quietest Hours</div>
+            <div class="grid grid-cols-3 gap-1">
+              <div id="stat-quietest-3d">
+                <div class="text-gray-500 text-[9px]" data-i18n="quietPeriods.past3days">3d</div>
+                <div class="font-bold" data-field="range">—</div>
+                <div class="text-gray-500 text-[9px]" dir="ltr" data-field="dur"></div>
+              </div>
+              <div id="stat-quietest-7d">
+                <div class="text-gray-500 text-[9px]" data-i18n="quietPeriods.past7days">7d</div>
+                <div class="font-bold" data-field="range">—</div>
+                <div class="text-gray-500 text-[9px]" dir="ltr" data-field="dur"></div>
+              </div>
+              <div id="stat-quietest-all">
+                <div class="text-gray-500 text-[9px]" data-i18n="quietPeriods.sinceStart">All</div>
+                <div class="font-bold" data-field="range">—</div>
+                <div class="text-gray-500 text-[9px]" dir="ltr" data-field="dur"></div>
+              </div>
             </div>
           </div>
-        </div>
-        <div class="border-t sm:border-t-0 sm:border-s border-gray-700 pt-4 sm:pt-0 sm:ps-8">
-          <div class="text-gray-400 text-sm font-semibold mb-2" data-i18n="quietPeriods.quietestHour">Quietest Hours</div>
-          <div class="flex gap-6">
-            <div id="stat-quietest-3d" class="text-sm">
-              <div class="text-gray-500 text-xs" data-i18n="quietPeriods.past3days">3 days</div>
-              <div class="font-bold" data-field="range">—</div>
-              <div class="text-gray-500 text-xs" dir="ltr" data-field="dur"></div>
-            </div>
-            <div id="stat-quietest-7d" class="text-sm">
-              <div class="text-gray-500 text-xs" data-i18n="quietPeriods.past7days">7 days</div>
-              <div class="font-bold" data-field="range">—</div>
-              <div class="text-gray-500 text-xs" dir="ltr" data-field="dur"></div>
-            </div>
-            <div id="stat-quietest-all" class="text-sm">
-              <div class="text-gray-500 text-xs" data-i18n="quietPeriods.sinceStart">All time</div>
-              <div class="font-bold" data-field="range">—</div>
-              <div class="text-gray-500 text-xs" dir="ltr" data-field="dur"></div>
+          <div class="border-t border-gray-700 pt-2">
+            <div class="text-gray-400 text-[10px] font-semibold mb-0.5" data-i18n="quietPeriods.longestQuiet">Longest Quiet</div>
+            <div class="grid grid-cols-4 gap-1">
+              <div id="stat-quiet-today">
+                <div class="text-gray-500 text-[9px]" data-i18n="quietPeriods.today">Today</div>
+                <div class="font-bold" dir="ltr" data-field="dur">—</div>
+                <div class="text-gray-500 text-[9px]" data-field="range"></div>
+              </div>
+              <div id="stat-quiet-3d">
+                <div class="text-gray-500 text-[9px]" data-i18n="quietPeriods.past3days">3d</div>
+                <div class="font-bold" dir="ltr" data-field="dur">—</div>
+                <div class="text-gray-500 text-[9px]" data-field="range"></div>
+              </div>
+              <div id="stat-quiet-7d">
+                <div class="text-gray-500 text-[9px]" data-i18n="quietPeriods.past7days">7d</div>
+                <div class="font-bold" dir="ltr" data-field="dur">—</div>
+                <div class="text-gray-500 text-[9px]" data-field="range"></div>
+              </div>
+              <div id="stat-quiet-all">
+                <div class="text-gray-500 text-[9px]" data-i18n="quietPeriods.sinceStart">All</div>
+                <div class="font-bold" dir="ltr" data-field="dur">—</div>
+                <div class="text-gray-500 text-[9px]" data-field="range"></div>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </template>
 
     <!-- ── Duration by Zone (temporarily hidden) ── -->
     <h2 id="duration-chart-title" class="text-lg font-bold mt-8 mb-3 hidden" data-i18n="charts.durationByZone">Alert Duration by Zone</h2>
@@ -315,6 +316,26 @@ The timeline shows alerts by time of day, and the heatmap highlights recurring p
       </div>
     </div>
   </div>
+
+  <!-- ── Mobile bottom nav ── -->
+  <nav id="mobile-nav" class="fixed bottom-0 inset-x-0 z-30 bg-gray-950/95 backdrop-blur-sm border-t border-gray-800 flex justify-around py-1.5 sm:hidden">
+    <a href="#map-section" class="flex flex-col items-center text-gray-400 text-[10px] gap-0.5 py-1 px-3">
+      <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
+      <span data-i18n="header.navMap">Map</span>
+    </a>
+    <a href="#timeline-section" class="flex flex-col items-center text-gray-400 text-[10px] gap-0.5 py-1 px-3">
+      <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg>
+      <span data-i18n="header.navTimeline">Timeline</span>
+    </a>
+    <a href="#stats-section" class="flex flex-col items-center text-gray-400 text-[10px] gap-0.5 py-1 px-3">
+      <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="12" width="4" height="9" rx="1"/><rect x="10" y="6" width="4" height="15" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg>
+      <span data-i18n="header.navStats">Stats</span>
+    </a>
+    <a href="#about-section" class="flex flex-col items-center text-gray-400 text-[10px] gap-0.5 py-1 px-3">
+      <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4m0-4h.01"/></svg>
+      <span data-i18n="header.navAbout">About</span>
+    </a>
+  </nav>
 
   <footer class="max-w-6xl mx-auto px-4 py-6 mt-12 border-t border-gray-800 text-gray-500 text-xs flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
     <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="sleepylion" data-color="#FFDD00" data-emoji="" data-font="Lato" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff"></script>

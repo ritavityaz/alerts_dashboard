@@ -5,19 +5,21 @@ import { onSignal } from "./queries.js";
 import * as store from "./store.js";
 import { queryEventsByCityInZone } from "./db.js";
 
-const threatColors = {
+export const threatColors = {
   "1": "#ef4444",   // missiles
   "2": "#8b5cf6",   // drones
   "10": "#f59e0b",  // infiltrations
+  "fa": "#a8a29e",  // false alarms
 };
 
-const threatI18nKeys = {
+export const threatI18nKeys = {
   "1": "timeline.missiles",
   "2": "timeline.drones",
   "10": "timeline.infiltration",
+  "fa": "timeline.falseAlarm",
 };
 
-const CATEGORIES = ["1", "2", "10"];
+export const CATEGORIES = ["1", "2", "10", "fa"];
 
 /**
  * Merge overlapping intervals and return total covered duration in ms.
@@ -129,7 +131,15 @@ export function createDailyHistogram(container, { yFormat, tooltipFmt, signalNam
   // Invisible hit rects on top for tooltips
   const hitG = g.append("g");
 
+  let lastData = null;
+  let resizeTimer = 0;
+  new ResizeObserver(() => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (lastData) update(lastData); }, 150);
+  }).observe(container);
+
   function update(data) {
+    lastData = data;
     // data: [{day_ms, byCategory: {"1": n, "2": n, "10": n}}]
     if (!data || data.length === 0) {
       svg.attr("height", 0);
@@ -215,10 +225,10 @@ export function createDailyHistogram(container, { yFormat, tooltipFmt, signalNam
       .attr("y", 0)
       .attr("height", innerH)
       .attr("fill", "transparent")
-      .on("mousemove", (event, d) => {
+      .on("pointermove", (event, d) => {
         showTooltip(event.pageX, event.pageY, tooltipFmt(d));
       })
-      .on("mouseleave", () => hideTooltip());
+      .on("pointerleave", () => hideTooltip());
   }
 
   if (signalName) {
@@ -334,11 +344,11 @@ export function createZoneDurationChart(container, { fetchCityEvents = null, dis
       .attr("fill", (d) => threatColors[d.cat])
       .attr("fill-opacity", (d) => d.rowType === "city" ? 0.6 : 0.8)
       .attr("rx", 1)
-      .on("mousemove", (event, d) => {
+      .on("pointermove", (event, d) => {
         showTooltip(event.pageX, event.pageY,
           `<strong>${displayName(d.name)}</strong><br>${t(threatI18nKeys[d.cat])}: ${fmtDurationShort(d.count)}`);
       })
-      .on("mouseleave", () => hideTooltip());
+      .on("pointerleave", () => hideTooltip());
 
     barsG.selectAll(".total-label")
       .data(flatRows, (d) => d.key)
@@ -363,10 +373,10 @@ export function createZoneDurationChart(container, { fetchCityEvents = null, dis
       .attr("height", (d) => d.h)
       .attr("fill", "transparent")
       .style("cursor", "pointer")
-      .on("mouseenter", function () {
+      .on("pointerenter", function () {
         d3.select(this).attr("fill", "rgba(99,102,241,0.08)");
       })
-      .on("mouseleave", function () {
+      .on("pointerleave", function () {
         d3.select(this).attr("fill", "transparent");
       })
       .on("click", async (_event, d) => {

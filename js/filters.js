@@ -669,23 +669,27 @@ function wireMobileBottomSheet() {
     closeBottomSheet();
   });
 
-  // Touch drag to dismiss
+  // Touch drag to dismiss (only when scrolled to top)
   let touchStartY = 0;
   let currentTranslateY = 0;
+  let allowDrag = false;
 
   sheet.addEventListener("touchstart", (event) => {
+    allowDrag = sheet.scrollTop <= 0;
     touchStartY = event.touches[0].clientY;
     currentTranslateY = 0;
     sheet.style.transition = "none";
   });
 
   sheet.addEventListener("touchmove", (event) => {
+    if (!allowDrag) return;
     const deltaY = event.touches[0].clientY - touchStartY;
     if (deltaY > 0) {
       currentTranslateY = deltaY;
       sheet.style.transform = `translateY(${deltaY}px)`;
+      event.preventDefault();
     }
-  });
+  }, { passive: false });
 
   sheet.addEventListener("touchend", () => {
     sheet.style.transition = "";

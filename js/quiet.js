@@ -5,10 +5,10 @@
  * filteredAlertEvents signal, updates the DOM, and wires click-to-highlight.
  */
 
-import * as d3 from "d3";
 import { t } from "./i18n.js";
 import { onSignal } from "./queries.js";
 import * as slider from "./slider.js";
+import { israelTimeHHMM, israelDateDM, israelDayStartUtc } from "./tz.js";
 
 const _hFmt = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: "Asia/Jerusalem" });
 const _mFmt = new Intl.DateTimeFormat("en-US", { minute: "numeric", timeZone: "Asia/Jerusalem" });
@@ -121,15 +121,13 @@ export function formatDuration(ms) {
 
 /**
  * Format a gap's time range as a string (e.g. "14:30–18:00" or "12/3 14:30–13/3 08:00").
+ * Uses Israel timezone for all formatting.
  */
-const gapTimeFmt = d3.timeFormat("%H:%M");
-const gapDateFmt = d3.timeFormat("%-d/%m %H:%M");
 export function formatGapRange(gap) {
   if (!gap || !gap.ms) return "";
-  const s = new Date(gap.start), e = new Date(gap.end);
-  const sameDay = d3.timeDay(s).getTime() === d3.timeDay(e).getTime();
-  if (sameDay) return `${gapTimeFmt(s)}–${gapTimeFmt(e)}`;
-  return `${gapDateFmt(s)}–${gapDateFmt(e)}`;
+  const sameDay = israelDayStartUtc(gap.start) === israelDayStartUtc(gap.end);
+  if (sameDay) return `${israelTimeHHMM(gap.start)}–${israelTimeHHMM(gap.end)}`;
+  return `${israelDateDM(gap.start)} ${israelTimeHHMM(gap.start)}–${israelDateDM(gap.end)} ${israelTimeHHMM(gap.end)}`;
 }
 
 /**
@@ -206,14 +204,11 @@ export function initQuietPeriods(timelineHighlight) {
   // Subscribe to filteredAlertEvents and update quiet period DOM
   onSignal("filteredAlertEvents", (events) => {
     const now = new Date();
-    const fmt = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jerusalem", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", hour12: false });
-    const p = {}; for (const { type, value } of fmt.formatToParts(now)) p[type] = +value;
-    const offsetMs = Date.UTC(p.year, p.month - 1, p.day, p.hour === 24 ? 0 : p.hour, p.minute) - (+now - (+now % 60000));
-    const localMs = +now + offsetMs;
-    const todayStart = new Date(localMs - (localMs % 86400000) - offsetMs);
-    const threeDaysAgo = new Date(+todayStart - 3 * 86400000);
-    const sevenDaysAgo = new Date(+todayStart - 7 * 86400000);
-    const minDate = slider.getMinDate() || todayStart;
+    const todayStartMs = israelDayStartUtc(+now);
+    const todayStart = new Date(todayStartMs);
+    const threeDaysAgo = new Date(israelDayStartUtc(todayStartMs - 3 * 86400000));
+    const sevenDaysAgo = new Date(israelDayStartUtc(todayStartMs - 7 * 86400000));
+    const minDate = new Date(slider.getMinMs() || todayStartMs);
 
     // Longest quiet periods
     const gapToday = longestGap(events, todayStart, now);

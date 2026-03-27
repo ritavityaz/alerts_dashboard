@@ -3,6 +3,9 @@
  *
  * Subscribes to hourlySparkline signal for the area chart.
  * Writes to store when the slider or step buttons change.
+ *
+ * The slider domain is in UTC epoch ms. Display labels use i18n formatters
+ * which are DST-correct via Intl.DateTimeFormat.
  */
 
 import * as d3 from "d3";
@@ -10,6 +13,8 @@ import * as store from "./store.js";
 import { onSignal } from "./queries.js";
 import { t, formatDateTime } from "./i18n.js";
 import { showTooltip, hideTooltip } from "./tooltip.js";
+import { israelDayStartUtc, nextIsraelDay } from "./tz.js";
+import { isMobile } from "./framework.js";
 
 let minDate = null;
 let maxDate = null;
@@ -19,25 +24,26 @@ let yScale = null;
 let areaGenerator = null;
 let sparkPath = null;
 let sparkContainer = null;
+let sparkWidth = 0;
 
 /**
  * Initialize the slider with the time bounds from snapshot.
  * Must be called before DuckDB is ready (uses snapshot data).
  */
 export function init(snapshotMinMs, snapshotMaxMs) {
-  minDate = toIsraelTime(new Date(snapshotMinMs));
-  maxDate = toIsraelTime(new Date(Math.max(snapshotMaxMs, Date.now())));
+  minDate = new Date(snapshotMinMs);
+  maxDate = new Date(Math.max(snapshotMaxMs, Date.now()));
   totalHours = Math.ceil((maxDate - minDate) / 3600000);
 
   sparkContainer = document.getElementById("sparkline");
-  const sparkWidth = sparkContainer.clientWidth;
+  sparkWidth = sparkContainer.clientWidth;
   const sparkHeight = 40;
-  const thumbRadius = 7;
+  const thumbRadius = () => isMobile() ? 14 : 7;
 
   const sparkSvg = d3.select(sparkContainer).append("svg")
     .attr("width", sparkWidth).attr("height", sparkHeight);
 
-  xScale = d3.scaleTime().domain([minDate, maxDate]).range([thumbRadius, sparkWidth - thumbRadius]);
+  xScale = d3.scaleTime().domain([minDate, maxDate]).range([thumbRadius(), sparkWidth - thumbRadius()]);
   yScale = d3.scaleLinear().range([sparkHeight, 0]);
 
   areaGenerator = d3.area()
@@ -46,10 +52,12 @@ export function init(snapshotMinMs, snapshotMaxMs) {
     .y1((dataPoint) => yScale(dataPoint.count))
     .curve(d3.curveMonotoneX);
 
-  // Date gridlines
-  const days = d3.timeDay.range(d3.timeDay.ceil(minDate), maxDate);
-  sparkSvg.selectAll(".gridline")
-    .data(days)
+  // Date gridlines — Israel day boundaries
+  const gridDays = [];
+  const firstGridDay = nextIsraelDay(israelDayStartUtc(+minDate));
+  for (let d = firstGridDay; d < +maxDate; d = nextIsraelDay(d)) gridDays.push(new Date(d));
+  const gridlinesSel = sparkSvg.selectAll(".gridline")
+    .data(gridDays)
     .join("line")
     .attr("class", "gridline")
     .attr("x1", (day) => xScale(day))
@@ -72,23 +80,40 @@ export function init(snapshotMinMs, snapshotMaxMs) {
     .attr("stroke", "#94a3b8").attr("stroke-width", 0.5)
     .style("display", "none");
 
-  sparkSvg.append("rect")
+  const hoverRect = sparkSvg.append("rect")
     .attr("width", sparkWidth).attr("height", sparkHeight)
     .attr("fill", "none")
     .attr("pointer-events", "all")
-    .on("mousemove", (event) => {
+    .on("pointermove", (event) => {
       const [mouseX] = d3.pointer(event);
       const date = xScale.invert(mouseX);
       const hour = d3.timeHour(date);
       const data = sparkPath.datum();
       const match = data?.find((dataPoint) => +dataPoint.date === +hour);
       hoverLine.attr("x1", mouseX).attr("x2", mouseX).style("display", null);
-      showTooltip(event.pageX, event.pageY, `<strong>${formatDateTime(+hour - israelOffset())}</strong><br>${d3.format(",")(match?.count || 0)} ${t("map.alerts")}`);
+      showTooltip(event.pageX, event.pageY, `<strong>${formatDateTime(+hour)}</strong><br>${d3.format(",")(match?.count || 0)} ${t("map.alerts")}`);
     })
-    .on("mouseleave", () => {
+    .on("pointerleave", () => {
       hoverLine.style("display", "none");
       hideTooltip();
     });
+
+  // Resize sparkline on orientation change / container resize
+  let resizeTimer = 0;
+  new ResizeObserver(() => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const newWidth = sparkContainer.clientWidth;
+      if (newWidth === sparkWidth) return;
+      sparkWidth = newWidth;
+      sparkSvg.attr("width", sparkWidth);
+      xScale.range([thumbRadius(), sparkWidth - thumbRadius()]);
+      gridlinesSel.attr("x1", (day) => xScale(day)).attr("x2", (day) => xScale(day));
+      hoverRect.attr("width", sparkWidth);
+      if (sparkPath.datum()) sparkPath.attr("d", areaGenerator);
+      renderSlider(store.getState());
+    }, 100);
+  }).observe(sparkContainer);
 
   // Range slider setup
   const rangeMin = document.getElementById("range-min");
@@ -102,8 +127,8 @@ export function init(snapshotMinMs, snapshotMaxMs) {
   // ── Rendering: driven entirely by store state ──
 
   function renderSlider(state) {
-    const lowHour = state.startMs != null ? Math.max(0, dateToSlider(utcMsToIsraelDate(state.startMs))) : 0;
-    const highHour = state.endMs != null ? Math.min(totalHours, dateToSlider(utcMsToIsraelDate(state.endMs))) : totalHours;
+    const lowHour = state.startMs != null ? Math.max(0, dateToSlider(state.startMs)) : 0;
+    const highHour = state.endMs != null ? Math.min(totalHours, dateToSlider(state.endMs)) : totalHours;
 
     rangeMin.value = lowHour;
     rangeMax.value = highHour;
@@ -113,9 +138,10 @@ export function init(snapshotMinMs, snapshotMaxMs) {
     startLabel.textContent = formatDateTime(startMs);
     endLabel.textContent = formatDateTime(endMs);
 
-    const trackWidth = sparkWidth - 2 * thumbRadius;
-    const lowPixel = thumbRadius + (lowHour / totalHours) * trackWidth;
-    const highPixel = thumbRadius + (highHour / totalHours) * trackWidth;
+    const tr = thumbRadius();
+    const trackWidth = sparkWidth - 2 * tr;
+    const lowPixel = tr + (lowHour / totalHours) * trackWidth;
+    const highPixel = tr + (highHour / totalHours) * trackWidth;
     highlight.style.insetInlineStart = `${lowPixel}px`;
     highlight.style.width = `${highPixel - lowPixel}px`;
   }
@@ -150,9 +176,10 @@ export function init(snapshotMinMs, snapshotMaxMs) {
     if (low > high) { low = high; rangeMin.value = low; }
     startLabel.textContent = formatDateTime(sliderToUtcMs(low));
     endLabel.textContent = formatDateTime(sliderToUtcMs(high));
-    const trackWidth = sparkWidth - 2 * thumbRadius;
-    const lowPixel = thumbRadius + (low / totalHours) * trackWidth;
-    const highPixel = thumbRadius + (high / totalHours) * trackWidth;
+    const tr = thumbRadius();
+    const trackWidth = sparkWidth - 2 * tr;
+    const lowPixel = tr + (low / totalHours) * trackWidth;
+    const highPixel = tr + (high / totalHours) * trackWidth;
     highlight.style.insetInlineStart = `${lowPixel}px`;
     highlight.style.width = `${highPixel - lowPixel}px`;
   }
@@ -239,16 +266,14 @@ export function init(snapshotMinMs, snapshotMaxMs) {
  */
 export function renderFromSnapshot(sparklineData) {
   if (!sparkPath || !minDate) return;
-  const offset = israelOffset();
-  const sparkMap = new Map(sparklineData.map(([epochMs, count]) => [epochMs + offset, count]));
+  const sparkMap = new Map(sparklineData.map(([epochMs, count]) => [epochMs, count]));
   renderSparklineFromMap(sparkMap);
 }
 
 // ── Internal helpers ──
 
 function renderSparkline(sparkData) {
-  const offset = israelOffset();
-  const sparkMap = new Map(sparkData.map((dataPoint) => [dataPoint.hour + offset, dataPoint.count]));
+  const sparkMap = new Map(sparkData.map((dataPoint) => [dataPoint.hour, dataPoint.count]));
   renderSparklineFromMap(sparkMap);
 }
 
@@ -260,38 +285,10 @@ function renderSparklineFromMap(sparkMap) {
 }
 
 /**
- * Convert a UTC Date to a "fake-local" Date whose local fields show Israel time.
+ * Get the minimum UTC epoch ms (for quiet period analysis window).
  */
-function toIsraelTime(utcDate) {
-  const israelString = utcDate.toLocaleString("en-US", { timeZone: "Asia/Jerusalem" });
-  return new Date(israelString);
-}
-
-function utcMsToIsraelDate(utcMs) {
-  return toIsraelTime(new Date(utcMs));
-}
-
-/**
- * Israel-to-UTC offset in ms (same as israelOffsetMs, used internally for sparkline).
- * NOTE: This uses a single offset and does not handle DST transitions.
- * Full DST handling is deferred to a later phase.
- */
-function israelOffset() {
-  return minDate.getTime() - _snapshotMinMs;
-}
-
-/**
- * Get the Israel fake-local minDate (for heatmap/quiet period computation).
- */
-export function getMinDate() {
-  return minDate;
-}
-
-// Recompute from minDate each time to be explicit
-export function israelOffsetMs() {
-  // The offset used in main.js: minDate.getTime() - minTs
-  // minDate is toIsraelTime(new Date(minTs)), so offset = toIsraelTime(minTs).getTime() - minTs
-  return minDate.getTime() - _snapshotMinMs;
+export function getMinMs() {
+  return _snapshotMinMs;
 }
 
 let _snapshotMinMs = 0;
@@ -312,14 +309,10 @@ export function getTimeBounds() {
   return { minMs: _snapshotMinMs, maxMs: _snapshotMaxMs || Date.now() };
 }
 
-function sliderToDate(sliderValue) {
-  return new Date(minDate.getTime() + sliderValue * 3600000);
-}
-
 function sliderToUtcMs(sliderValue) {
-  return +sliderToDate(sliderValue) - israelOffsetMs();
+  return +minDate + sliderValue * 3600000;
 }
 
-function dateToSlider(date) {
-  return Math.round((date - minDate) / 3600000);
+function dateToSlider(utcMs) {
+  return Math.round((utcMs - +minDate) / 3600000);
 }

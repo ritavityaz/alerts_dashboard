@@ -86,10 +86,17 @@ html {
   @apply absolute pointer-events-none bg-black/90 text-white text-xs leading-relaxed px-3 py-2 rounded hidden z-50 max-w-[320px] max-h-[400px] overflow-y-auto;
 }
 
-/* Mobile: tooltip becomes a fixed bottom bar */
+/* Mobile: tooltip becomes a fixed bottom bar (above mobile nav) */
 .tooltip-bottom-bar {
-  @apply fixed inset-x-0 bottom-0 z-50 bg-black/95 text-white text-sm px-4 py-3 max-h-[40vh] overflow-y-auto;
+  @apply fixed inset-x-0 z-50 bg-black/95 text-white text-sm px-4 py-3 max-h-[40vh] overflow-y-auto;
+  bottom: 3.5rem;
   pointer-events: auto;
+}
+
+@media (min-width: 640px) {
+  .tooltip-bottom-bar {
+    bottom: 0;
+  }
 }
 
 /* ── Chart containers always LTR (axes, labels, data) ── */
@@ -283,9 +290,25 @@ html {
   @apply w-10 h-1 bg-gray-600 rounded-full mx-auto mt-3 mb-2;
 }
 
+/* ── Filter chip scroll fade ── */
+
+#filter-chips {
+  mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+}
+
+[dir="rtl"] #filter-chips {
+  mask-image: linear-gradient(to left, black calc(100% - 24px), transparent);
+  -webkit-mask-image: linear-gradient(to left, black calc(100% - 24px), transparent);
+}
+
 /* ── Tap targets: 44px minimum on mobile ── */
 
 @media (max-width: 639px) {
+  body {
+    padding-bottom: 3.5rem;
+  }
+
   button, [role="button"], select, .tap-target {
     min-height: 44px;
     min-width: 44px;
@@ -300,5 +323,30 @@ html {
   .ctx-btn {
     min-height: 36px;
     min-width: 44px;
+  }
+
+  /* Heatmap period select: compact inline control, not a primary action */
+  .heatmap-period-select {
+    min-height: unset;
+    min-width: unset;
+  }
+
+  /* Slider thumbs: large enough for touch */
+  .range-slider {
+    height: 32px;
+  }
+
+  .range-slider input[type="range"] {
+    height: 32px;
+  }
+
+  .range-slider input[type="range"]::-webkit-slider-thumb {
+    width: 28px;
+    height: 28px;
+  }
+
+  .range-slider input[type="range"]::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
   }
 }

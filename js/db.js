@@ -1,4 +1,5 @@
 import * as duckdb from "@duckdb/duckdb-wasm";
+import { israelDayStartUtc, nextIsraelDay } from "./tz.js";
 
 let db = null;
 let conn = null;
@@ -31,20 +32,20 @@ export async function initDB(alertsBuf, incidentsBuf, incidentEventsBuf) {
   conn = await db.connect();
   console.timeEnd("duckdb:connect");
 
-  console.time("duckdb:alerts-table");
+  // console.time("duckdb:alerts-table");
   await db.registerFileBuffer("alerts.parquet", new Uint8Array(alertsBuf));
   await conn.query(`CREATE TABLE alerts AS SELECT * FROM read_parquet('alerts.parquet')`);
-  console.timeEnd("duckdb:alerts-table");
+  // console.timeEnd("duckdb:alerts-table");
 
-  console.time("duckdb:incidents-table");
+  // console.time("duckdb:incidents-table");
   await db.registerFileBuffer("incidents.parquet", new Uint8Array(incidentsBuf));
   await conn.query(`CREATE TABLE incidents AS SELECT * FROM read_parquet('incidents.parquet')`);
-  console.timeEnd("duckdb:incidents-table");
+  // console.timeEnd("duckdb:incidents-table");
 
-  console.time("duckdb:incident-events-table");
+  // console.time("duckdb:incident-events-table");
   await db.registerFileBuffer("incident_events.parquet", new Uint8Array(incidentEventsBuf));
   await conn.query(`CREATE TABLE incident_events AS SELECT * FROM read_parquet('incident_events.parquet')`);
-  console.timeEnd("duckdb:incident-events-table");
+  // console.timeEnd("duckdb:incident-events-table");
 }
 
 /**
@@ -144,7 +145,7 @@ export async function queryStats(ctx, zone, city, startMs, endMs) {
       FROM alerts ${where}
     `),
     conn.query(`
-      SELECT (ts / 86400000) as day_key, SUM(count) as cnt
+      SELECT epoch_ms(CAST(timezone('Asia/Jerusalem', to_timestamp(ts / 1000.0)) AS DATE)) as day_key, SUM(count) as cnt
       FROM alerts ${where}
       GROUP BY day_key ORDER BY cnt DESC LIMIT 1
     `),
@@ -161,7 +162,7 @@ export async function queryStats(ctx, zone, city, startMs, endMs) {
   let peakDayMs = null;
   let peakCount = 0;
   if (peak.numRows > 0) {
-    peakDayMs = Number(peak.getChild("day_key").get(0)) * 86400000;
+    peakDayMs = Number(peak.getChild("day_key").get(0));
     peakCount = Number(peak.getChild("cnt").get(0));
   }
 
@@ -255,6 +256,14 @@ export async function queryFilteredEvents(threat, ctx, zone, city) {
 }
 
 /**
+ * Return every incident row (no filter) for one-time precomputation.
+ * Same shape as queryFilteredEvents but hits the full table.
+ */
+export async function queryAllIncidents() {
+  return queryFilteredEvents("all", "country", "all", null);
+}
+
+/**
  * Get events grouped by zone and threat type, for computing alert duration per zone.
  * Returns array of {zone, category, start_ms, end_ms, cities} sorted by zone total desc.
  */
@@ -302,13 +311,24 @@ export async function queryEventsByZone(startMs, endMs) {
  * Returns array of {day_ms, count}.
  */
 export async function queryDailyAlertCounts(startMs, endMs, ctx, zone, city) {
-  const where = filterWhere("alerts", { ctx, zone, city, startMs, endMs });
+  const alertsWhere = filterWhere("alerts", { ctx, zone, city, startMs, endMs });
+  const incWhere = filterWhere("incidents", { ctx, zone, city, startMs, endMs });
+  const falseAlarmFilter = incWhere
+    ? incWhere + " AND threat_type = 'false_alarm'"
+    : "WHERE threat_type = 'false_alarm'";
 
-  const result = await conn.query(`
-    SELECT (ts / 86400000) as day_key, category, SUM(count) as cnt
-    FROM alerts ${where}
-    GROUP BY day_key, category ORDER BY day_key
-  `);
+  const [result, faResult] = await Promise.all([
+    conn.query(`
+      SELECT epoch_ms(CAST(timezone('Asia/Jerusalem', to_timestamp(ts / 1000.0)) AS DATE)) as day_key, category, SUM(count) as cnt
+      FROM alerts ${alertsWhere}
+      GROUP BY day_key, category ORDER BY day_key
+    `),
+    conn.query(`
+      SELECT epoch_ms(CAST(timezone('Asia/Jerusalem', to_timestamp(start_ms / 1000.0)) AS DATE)) as day_key, COUNT(*) as cnt
+      FROM (SELECT DISTINCT data, group_id, start_ms FROM incidents ${falseAlarmFilter})
+      GROUP BY day_key ORDER BY day_key
+    `),
+  ]);
 
   const dayCol = result.getChild("day_key");
   const catCol = result.getChild("category");
@@ -316,12 +336,22 @@ export async function queryDailyAlertCounts(startMs, endMs, ctx, zone, city) {
   // byDay: Map<day_ms, Map<category, count>>
   const byDay = new Map();
   for (let i = 0; i < result.numRows; i++) {
-    const day_ms = Math.floor(Number(dayCol.get(i))) * 86400000;
+    const day_ms = Number(dayCol.get(i));
     const cat = String(catCol.get(i));
     if (!byDay.has(day_ms)) byDay.set(day_ms, new Map());
     const catMap = byDay.get(day_ms);
     catMap.set(cat, (catMap.get(cat) || 0) + Number(cntCol.get(i)));
   }
+
+  // Merge false alarm counts (category "fa")
+  const faDayCol = faResult.getChild("day_key");
+  const faCntCol = faResult.getChild("cnt");
+  for (let i = 0; i < faResult.numRows; i++) {
+    const day_ms = Number(faDayCol.get(i));
+    if (!byDay.has(day_ms)) byDay.set(day_ms, new Map());
+    byDay.get(day_ms).set("fa", Number(faCntCol.get(i)));
+  }
+
   return [...byDay.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([day_ms, catMap]) => ({ day_ms, byCategory: Object.fromEntries(catMap) }));
@@ -353,18 +383,19 @@ export async function queryDailyShelterDuration(startMs, endMs, ctx, zone, city)
   const eCol = result.getChild("end_ms");
   const tCol = result.getChild("threat_type");
 
-  // Group intervals by day+category
+  // Group intervals by Israel day+category
   // dayMap: Map<day_ms, Map<category, [[start, end], ...]>>
   const dayMap = new Map();
   for (let i = 0; i < result.numRows; i++) {
     const s = Number(sCol.get(i));
     const e = Number(eCol.get(i));
     const cat = CATEGORY_MAP[tCol.get(i)] || String(tCol.get(i));
-    const dayStart = Math.floor(s / 86400000) * 86400000;
-    const dayEnd = Math.floor(e / 86400000) * 86400000;
-    for (let d = dayStart; d <= dayEnd; d += 86400000) {
+    const dayStart = israelDayStartUtc(s);
+    const dayEnd = israelDayStartUtc(e);
+    for (let d = dayStart; d <= dayEnd; d = nextIsraelDay(d)) {
+      const dNext = nextIsraelDay(d);
       const clipS = Math.max(s, d);
-      const clipE = Math.min(e, d + 86400000);
+      const clipE = Math.min(e, dNext);
       if (clipE <= clipS) continue;
       if (!dayMap.has(d)) dayMap.set(d, new Map());
       const catMap = dayMap.get(d);
@@ -442,6 +473,59 @@ export async function queryFilteredIncidentEvents(threat, ctx, zone, city) {
     });
   }
   return rows;
+}
+
+/**
+ * Heatmap bins: count alert events in 30-min time-of-day bins with exponential decay.
+ * Queries incident_events, filters by threat/zone/city and time window.
+ * Returns Float64Array(48) of decay-weighted counts.
+ */
+const HEATMAP_BINS = 48;
+const HEATMAP_HALF_LIFE_DAYS = 4;
+const HEATMAP_DECAY_RATE = Math.log(2) / HEATMAP_HALF_LIFE_DAYS;
+
+export async function queryHeatmapBins(threat, ctx, zone, city, fromMs, toMs) {
+  const incidentClauses = [];
+  if (threat && threat !== "all") {
+    incidentClauses.push(`threat_type = '${threatForCategory(threat)}'`);
+  }
+  if (ctx === "zone" && zone && zone !== "all") {
+    incidentClauses.push(`zone_en = '${escapeSql(zone)}'`);
+  } else if (ctx === "city" && city) {
+    incidentClauses.push(`data = '${escapeSql(city)}'`);
+  }
+  const incWhere = incidentClauses.length > 0 ? "WHERE " + incidentClauses.join(" AND ") : "";
+
+  const result = await conn.query(`
+    WITH filtered AS (
+      SELECT ie.ts
+      FROM incident_events ie
+      INNER JOIN (SELECT DISTINCT data, group_id FROM incidents ${incWhere}) inc
+        ON ie.data = inc.data AND ie.group_id = inc.group_id
+      WHERE ie.event_type = 'alert'
+        AND ie.ts >= ${fromMs} AND ie.ts <= ${toMs}
+    )
+    SELECT
+      CAST(FLOOR(
+        (EXTRACT(HOUR FROM timezone('Asia/Jerusalem', to_timestamp(ts / 1000.0))) * 60
+         + EXTRACT(MINUTE FROM timezone('Asia/Jerusalem', to_timestamp(ts / 1000.0))))
+        / 30
+      ) AS INTEGER) AS bin,
+      SUM(EXP(${-HEATMAP_DECAY_RATE} * (${toMs} - ts) / 86400000.0)) AS weight
+    FROM filtered
+    GROUP BY bin
+    ORDER BY bin
+  `);
+
+
+  const bins = new Float64Array(HEATMAP_BINS);
+  const binCol = result.getChild("bin");
+  const wCol = result.getChild("weight");
+  for (let i = 0; i < result.numRows; i++) {
+    const b = Number(binCol.get(i));
+    if (b >= 0 && b < HEATMAP_BINS) bins[b] = Number(wCol.get(i));
+  }
+  return bins;
 }
 
 export async function queryEventsByCityInZone(zone, startMs, endMs) {

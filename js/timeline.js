@@ -3,39 +3,12 @@ import { lang, t } from "./i18n.js";
 import { showTooltip, hideTooltip, pinTooltip, unpinTooltip, isTooltipPinned, setOnUnpin } from "./tooltip.js";
 import { onSignal } from "./queries.js";
 import { getState } from "./store.js";
+import { israelHourOfDay, israelDayStartUtc, israelParts, israelTimeHHMM, israelDateDM, nextIsraelDay } from "./tz.js";
 
 /**
- * Israel-timezone helpers.
- *
- * Israel offset is +02:00 (standard) or +03:00 (DST). We compute it once
- * for the dataset midpoint and use simple ms arithmetic everywhere —
- * the ±1h DST error is acceptable for timeline display.
+ * Slice alerts across Israel-timezone day boundaries.
+ * Each slice holds a reference to the original alert (no object spread).
  */
-const ISRAEL_OFFSET_MS = (() => {
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Jerusalem",
-    hour: "numeric", minute: "numeric", hour12: false,
-    year: "numeric", month: "numeric", day: "numeric",
-  });
-  const now = new Date();
-  const parts = {};
-  for (const { type, value } of fmt.formatToParts(now)) parts[type] = +value;
-  const localMs = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour === 24 ? 0 : parts.hour, parts.minute);
-  return localMs - (+now - (+now % 60000));
-})();
-
-function israelHourOfDay(date) {
-  const localMs = +date + ISRAEL_OFFSET_MS;
-  return (((localMs % 86400000) + 86400000) % 86400000) / 3600000;
-}
-
-/** Return midnight Israel time as a UTC Date for the day containing `date`. */
-function israelDay(date) {
-  const localMs = +date + ISRAEL_OFFSET_MS;
-  const midnightLocal = localMs - (((localMs % 86400000) + 86400000) % 86400000);
-  return new Date(midnightLocal - ISRAEL_OFFSET_MS);
-}
-
 function dayslice(alerts) {
   const slices = [];
   for (const a of alerts) {
@@ -43,15 +16,15 @@ function dayslice(alerts) {
     const endMs = +a._end;
 
     while (cursorMs < endMs) {
-      const dayMs = +israelDay(new Date(cursorMs));
-      const nextDayMs = dayMs + 86400000;
+      const dayMs = israelDayStartUtc(cursorMs);
+      const nextDayMs = nextIsraelDay(dayMs);
       const sliceEndMs = Math.min(endMs, nextDayMs);
 
       slices.push({
-        ...a,
+        alert: a,
         day: new Date(dayMs),
-        y0: israelHourOfDay(new Date(cursorMs)),
-        y1: israelHourOfDay(new Date(sliceEndMs < nextDayMs ? sliceEndMs : nextDayMs - 1)),
+        y0: israelHourOfDay(cursorMs),
+        y1: israelHourOfDay(sliceEndMs < nextDayMs ? sliceEndMs : nextDayMs - 1),
       });
 
       cursorMs = nextDayMs;
@@ -60,13 +33,32 @@ function dayslice(alerts) {
   return slices;
 }
 
+/** Incident key used for precomputed slice lookups. */
+function incidentKey(alert) {
+  return alert.data + "|" + alert.group_id;
+}
+
+/**
+ * Precompute slices for all incidents once.
+ * Returns a Map: incidentKey → [slice, slice, ...].
+ */
+function precomputeSliceIndex(allAlerts) {
+  const slices = dayslice(allAlerts);
+  const index = new Map();
+  for (const slice of slices) {
+    const key = incidentKey(slice.alert);
+    if (!index.has(key)) index.set(key, []);
+    index.get(key).push(slice);
+  }
+  return index;
+}
+
 /** Map each point-in-time event to a day + hour for rendering as a tick mark. */
 function dayslicePoints(events) {
   const points = [];
   for (const evt of events) {
     if (evt.event_type === "other") continue;
-    const d = new Date(evt.ts);
-    points.push({ ...evt, day: israelDay(d), yHour: israelHourOfDay(d) });
+    points.push({ ...evt, day: new Date(israelDayStartUtc(evt.ts)), yHour: israelHourOfDay(evt.ts) });
   }
   return points;
 }
@@ -102,10 +94,10 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
   const height = 600;
 
   // Fixed day domain from minMs/maxMs range (Israel timezone)
-  const firstDay = israelDay(new Date(minMs));
-  const lastDay = israelDay(new Date(maxMs));
+  const firstDayMs = israelDayStartUtc(minMs);
+  const lastDayMs = israelDayStartUtc(maxMs);
   const days = [];
-  for (let d = +firstDay; d <= +lastDay; d += 86400000) days.push(new Date(d));
+  for (let d = firstDayMs; d <= lastDayMs; d = nextIsraelDay(d)) days.push(new Date(d));
 
   // Color legend
   const threatI18nKeys = {
@@ -206,7 +198,7 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
   // X-axis (top) — inside scrollable SVG
   svg.append("g")
     .attr("transform", `translate(0,${margin.top})`)
-    .call(d3.axisTop(x).tickFormat((d) => new Date(+d + ISRAEL_OFFSET_MS).getUTCDate()).tickSize(0))
+    .call(d3.axisTop(x).tickFormat((d) => israelParts(+d).day).tickSize(0))
     .call((g) => g.select(".domain").remove())
     .call((g) => g.selectAll("text")
       .attr("fill", "#64748b")
@@ -214,7 +206,7 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
     );
 
   // Month labels
-  const monthStarts = days.filter((d, i) => i === 0 || new Date(+d + ISRAEL_OFFSET_MS).getUTCMonth() !== new Date(+days[i - 1] + ISRAEL_OFFSET_MS).getUTCMonth());
+  const monthStarts = days.filter((d, i) => i === 0 || israelParts(+d).month !== israelParts(+days[i - 1]).month);
   svg.selectAll(".month-label")
     .data(monthStarts)
     .join("text")
@@ -258,10 +250,7 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
   const dataGroup = svg.append("g");
   const eventTickGroup = svg.append("g"); // Individual event ticks (city-level only)
   const overlayGroup = svg.append("g"); // Separate group ensures overlays always sit on top of bars/dots
-  const timeFmt = (d) => {
-    const il = new Date(+d + ISRAEL_OFFSET_MS);
-    return `${String(il.getUTCHours()).padStart(2, "0")}:${String(il.getUTCMinutes()).padStart(2, "0")}`;
-  };
+  const timeFmt = (d) => israelTimeHHMM(+d);
 
   /**
    * Given a few "seed" slices under the cursor, expand outward to collect
@@ -315,7 +304,7 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
     const allEvts = [];
     const seen = new Set();
     for (const slice of slices) {
-      const key = slice.data + "|" + slice.group_id;
+      const key = incidentKey(slice.alert);
       if (seen.has(key)) continue;
       seen.add(key);
       const evts = eventsByGroup.get(key);
@@ -365,10 +354,11 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
     // Single alert — original simple format
     if (overlappingSlices.length === 1) {
       const slice = overlappingSlices[0];
-      const cityName = lang === "he" ? (slice.NAME_HE || slice.data) : (slice.NAME_EN || slice.data);
-      const threatLabel = t(threatI18nKeys[slice.threat_type]);
-      const startStr = timeFmt(slice._start);
-      const endStr = " \u2013 " + timeFmt(slice._end);
+      const a = slice.alert;
+      const cityName = lang === "he" ? (a.NAME_HE || a.data) : (a.NAME_EN || a.data);
+      const threatLabel = t(threatI18nKeys[a.threat_type]);
+      const startStr = timeFmt(a._start);
+      const endStr = " \u2013 " + timeFmt(a._end);
       return `<strong><bdi>${cityName}</bdi></strong><br>${threatLabel}<br><span dir="ltr">${startStr}${endStr}</span>${buildEventBreakdownHtml([slice])}`;
     }
 
@@ -376,24 +366,22 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
     const dedupeKeys = new Set();
     const dedupedSlices = [];
     for (const slice of overlappingSlices) {
-      const cityName = lang === "he" ? (slice.NAME_HE || slice.data) : (slice.NAME_EN || slice.data);
-      const key = cityName + "|" + slice.threat_type + "|" + timeFmt(slice._start);
+      const a = slice.alert;
+      const cityName = lang === "he" ? (a.NAME_HE || a.data) : (a.NAME_EN || a.data);
+      const key = cityName + "|" + a.threat_type + "|" + timeFmt(a._start);
       if (dedupeKeys.has(key)) continue;
       dedupeKeys.add(key);
       dedupedSlices.push(slice);
     }
 
     // Count unique cities
-    const uniqueCities = new Set(dedupedSlices.map((s) => s.data));
+    const uniqueCities = new Set(dedupedSlices.map((s) => s.alert.data));
     const useZoneGrouping = uniqueCities.size > ZONE_GROUP_THRESHOLD;
 
     // Compute cluster timespan from all slices
-    const clusterStart = new Date(Math.min(...overlappingSlices.map((s) => +s._start)));
-    const clusterEnd = new Date(Math.max(...overlappingSlices.map((s) => +s._end)));
-    const dateFmt = (d) => {
-      const il = new Date(+d + ISRAEL_OFFSET_MS);
-      return `${il.getUTCDate()}/${il.getUTCMonth() + 1}`;
-    };
+    const clusterStart = new Date(Math.min(...overlappingSlices.map((s) => +s.alert._start)));
+    const clusterEnd = new Date(Math.max(...overlappingSlices.map((s) => +s.alert._end)));
+    const dateFmt = (d) => israelDateDM(+d);
     const spanStart = `${dateFmt(clusterStart)} ${timeFmt(clusterStart)}`;
     const spanEnd = `${dateFmt(clusterEnd)} ${timeFmt(clusterEnd)}`;
     const timespan = +clusterStart === +clusterEnd ? spanStart
@@ -416,8 +404,9 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
   function buildFlatGroupedHtml(slices) {
     const groupedByThreat = new Map();
     for (const slice of slices) {
-      if (!groupedByThreat.has(slice.threat_type)) groupedByThreat.set(slice.threat_type, []);
-      groupedByThreat.get(slice.threat_type).push(slice);
+      const tt = slice.alert.threat_type;
+      if (!groupedByThreat.has(tt)) groupedByThreat.set(tt, []);
+      groupedByThreat.get(tt).push(slice);
     }
 
     const parts = [];
@@ -430,9 +419,10 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
         `<strong>${threatLabel}</strong></div>`
       );
       for (const slice of group.sort((a, b) => a.y0 - b.y0)) {
-        const cityName = lang === "he" ? (slice.NAME_HE || slice.data) : (slice.NAME_EN || slice.data);
-        const startStr = timeFmt(slice._start);
-        const endStr = " \u2013 " + timeFmt(slice._end);
+        const a = slice.alert;
+        const cityName = lang === "he" ? (a.NAME_HE || a.data) : (a.NAME_EN || a.data);
+        const startStr = timeFmt(a._start);
+        const endStr = " \u2013 " + timeFmt(a._end);
         parts.push(`<div style="padding-inline-start:12px"><bdi>${cityName}</bdi> <span dir="ltr" style="opacity:0.6">${startStr}${endStr}</span></div>`);
       }
     }
@@ -446,9 +436,10 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
     // Group: threat -> zone -> city -> [slices]
     const tree = new Map();
     for (const slice of slices) {
-      const threatType = slice.threat_type;
-      const zoneKey = slice.zone_en || "other";
-      const cityKey = slice.data;
+      const a = slice.alert;
+      const threatType = a.threat_type;
+      const zoneKey = a.zone_en || "other";
+      const cityKey = a.data;
 
       if (!tree.has(threatType)) tree.set(threatType, new Map());
       const zoneMap = tree.get(threatType);
@@ -476,13 +467,13 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
         // Zone: header + collapsible content wrapped in a container
         const zoneCity = [];
         for (const [cityKey, citySlices] of cityMap) {
-          const cityName = lang === "he" ? (citySlices[0].NAME_HE || cityKey) : (citySlices[0].NAME_EN || cityKey);
+          const cityName = lang === "he" ? (citySlices[0].alert.NAME_HE || cityKey) : (citySlices[0].alert.NAME_EN || cityKey);
           const sortedSlices = citySlices.sort((a, b) => a.y0 - b.y0);
 
           if (sortedSlices.length === 1) {
-            const slice = sortedSlices[0];
-            const startStr = timeFmt(slice._start);
-            const endStr = " \u2013 " + timeFmt(slice._end);
+            const sa = sortedSlices[0].alert;
+            const startStr = timeFmt(sa._start);
+            const endStr = " \u2013 " + timeFmt(sa._end);
             zoneCity.push(`<div style="padding-inline-start:24px"><bdi>${cityName}</bdi> <span dir="ltr" style="opacity:0.6">${startStr}${endStr}</span></div>`);
           } else {
             zoneCity.push(
@@ -491,8 +482,8 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
               `<bdi>${cityName}</bdi> <span style="opacity:0.5">(${sortedSlices.length})</span></div>` +
               `<div class="tt-content" style="display:none">` +
               sortedSlices.map((slice) => {
-                const startStr = timeFmt(slice._start);
-                const endStr = " \u2013 " + timeFmt(slice._end);
+                const startStr = timeFmt(slice.alert._start);
+                const endStr = " \u2013 " + timeFmt(slice.alert._end);
                 return `<div dir="ltr" style="padding-inline-start:40px;opacity:0.7">${startStr}${endStr}</div>`;
               }).join("") +
               `</div>`
@@ -519,8 +510,30 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
   }
 
   let slicesByDay = new Map();
+  let sliceIndex = null; // Map: incidentKey → [slice, ...] — set once via setSliceIndex
+
+  /**
+   * Precompute day-slices for all incidents (call once after DuckDB loads).
+   * Subsequent update() calls use this index instead of re-slicing.
+   */
+  function setSliceIndex(allAlerts) {
+    sliceIndex = precomputeSliceIndex(allAlerts);
+  }
+
   function update(alerts) {
-    const slices = dayslice(alerts);
+    // If precomputed index exists, collect slices by key lookup (fast path).
+    // Otherwise fall back to computing on the fly (before index is ready).
+    let slices;
+    if (sliceIndex) {
+      slices = [];
+      for (const a of alerts) {
+        const key = incidentKey(a);
+        const cached = sliceIndex.get(key);
+        if (cached) slices.push(...cached);
+      }
+    } else {
+      slices = dayslice(alerts);
+    }
 
     // Build per-day spatial index for fast hover lookups
     slicesByDay = new Map();
@@ -539,7 +552,7 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
       .attr("width", x.bandwidth())
       .attr("y", (slice) => y(slice.y0))
       .attr("height", (slice) => Math.max(1, y(slice.y1) - y(slice.y0)))
-      .attr("fill", (slice) => threatColors[slice.threat_type] || "#6366f1")
+      .attr("fill", (slice) => threatColors[slice.alert.threat_type] || "#6366f1")
       .attr("fill-opacity", 0.5)
       .attr("rx", 1);
 
@@ -579,7 +592,7 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
       .attr("height", y(24) - y(0))
       .attr("fill", "transparent")
       .attr("pointer-events", "all")
-      .on("mousemove", (event, hoveredDay) => {
+      .on("pointermove", (event, hoveredDay) => {
         if (isTooltipPinned()) return;
         const cluster = hitTestCluster(event, hoveredDay);
         if (!cluster) {
@@ -590,7 +603,7 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
         applyClusterHighlight(cluster.clusterSet);
         showTooltip(event.pageX, event.pageY, buildMergedTooltipHtml(cluster.slices));
       })
-      .on("mouseleave", () => {
+      .on("pointerleave", () => {
         if (isTooltipPinned()) return;
         hideTooltip();
         resetBarHighlight();
@@ -611,8 +624,8 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
           showTooltip(event.pageX, event.pageY, buildMergedTooltipHtml(cluster.slices));
           pinTooltip();
           if (onClusterSelect) {
-            const startMs = Math.min(...cluster.slices.map((s) => +s._start));
-            const endMs = Math.max(...cluster.slices.map((s) => +s._end));
+            const startMs = Math.min(...cluster.slices.map((s) => +s.alert._start));
+            const endMs = Math.max(...cluster.slices.map((s) => +s.alert._end));
             onClusterSelect({ startMs, endMs });
           }
         }
@@ -677,19 +690,17 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
   function highlightGap(startMs, endMs) {
     highlightGroup.selectAll("*").remove();
     if (startMs == null || endMs == null) return;
-    const start = new Date(startMs);
-    const end = new Date(endMs);
 
     for (const day of days) {
       const dayStart = +day;
-      const dayEnd = dayStart + 86400000;
+      const dayEnd = nextIsraelDay(dayStart);
       if (dayEnd <= startMs || dayStart >= endMs) continue;
 
       const colX = x(day);
       if (colX == null) continue;
 
-      const hourFrom = dayStart < startMs ? israelHourOfDay(start) : 0;
-      const hourTo = dayEnd > endMs ? israelHourOfDay(end) : 24;
+      const hourFrom = dayStart < startMs ? israelHourOfDay(startMs) : 0;
+      const hourTo = dayEnd > endMs ? israelHourOfDay(endMs) : 24;
 
       highlightGroup.append("rect")
         .attr("x", colX)
@@ -744,5 +755,5 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
     }
   }
 
-  return { update, updateLegendLabels, highlightGap, highlightHourRange };
+  return { update, setSliceIndex, updateLegendLabels, highlightGap, highlightHourRange };
 }

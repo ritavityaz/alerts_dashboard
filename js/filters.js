@@ -550,8 +550,11 @@ function openBottomSheet() {
     chip.classList.toggle("text-gray-400", !isActive);
   }
 
-  const cityInput = document.getElementById("mobile-city-filter");
-  if (cityInput) cityInput.value = state.city ? cityDisplayName(state.city) : "";
+  const citySelect = document.getElementById("mobile-city-filter");
+  if (citySelect) {
+    populateMobileCitySelect(citySelect);
+    citySelect.value = state.city || "";
+  }
 
   const zoneSelect = document.getElementById("mobile-zone-filter");
   if (zoneSelect) {
@@ -588,31 +591,17 @@ function populateMobileZoneSelect(select) {
   }
 }
 
-function showMobileCityDropdown(input, dropdown, filterText) {
-  const list = getCityList();
-  const query = filterText.toLowerCase();
-  const matches = query
-    ? list.filter((city) => city.toLowerCase().includes(query)).sort((a, b) => {
-        const aStarts = a.toLowerCase().startsWith(query) ? 0 : 1;
-        const bStarts = b.toLowerCase().startsWith(query) ? 0 : 1;
-        return aStarts - bStarts || a.localeCompare(b);
-      })
-    : list;
-
-  dropdown.innerHTML = "";
-  for (const city of matches.slice(0, 50)) {
-    const li = document.createElement("li");
-    li.textContent = city;
-    li.className = "px-3 py-1.5 cursor-pointer hover:bg-gray-700 text-gray-200";
-    li.addEventListener("mousedown", (event) => {
-      event.preventDefault();
-      input.value = city;
-      dropdown.classList.add("hidden");
-      input.dispatchEvent(new Event("change"));
-    });
-    dropdown.appendChild(li);
+function populateMobileCitySelect(select) {
+  // Keep the first "All cities" option, clear the rest
+  while (select.options.length > 1) select.remove(1);
+  const cities = getCityList();
+  for (const displayName of cities) {
+    const option = document.createElement("option");
+    // Store the Hebrew key as value (what store expects)
+    option.value = resolveCityName(displayName) || displayName;
+    option.textContent = displayName;
+    select.appendChild(option);
   }
-  dropdown.classList.toggle("hidden", matches.length === 0);
 }
 
 function wireMobileBottomSheet() {
@@ -621,8 +610,7 @@ function wireMobileBottomSheet() {
   const applyButton = document.getElementById("mobile-apply");
   const resetButton = document.getElementById("mobile-reset");
   const threatChips = document.querySelectorAll("#mobile-threat-chips button");
-  const cityInput = document.getElementById("mobile-city-filter");
-  const cityDropdown = document.getElementById("mobile-city-dropdown");
+  const citySelect = document.getElementById("mobile-city-filter");
 
   if (!sheet) return;
 
@@ -645,18 +633,11 @@ function wireMobileBottomSheet() {
     });
   }
 
-  // City autocomplete
-  cityInput?.addEventListener("input", () => showMobileCityDropdown(cityInput, cityDropdown, cityInput.value));
-  cityInput?.addEventListener("focus", () => showMobileCityDropdown(cityInput, cityDropdown, cityInput.value));
-  cityInput?.addEventListener("blur", () => {
-    setTimeout(() => cityDropdown?.classList.add("hidden"), 150);
-  });
-
   // Apply
   applyButton?.addEventListener("click", () => {
     const zoneSelect = document.getElementById("mobile-zone-filter");
     const pendingZone = zoneSelect?.value || "all";
-    const cityHe = resolveCityName(cityInput?.value || "");
+    const cityHe = citySelect?.value || null;
     const zone = pendingZone !== "all" ? pendingZone : (cityHe ? (cityToZone.get(cityHe) || "all") : "all");
     const ctx = cityHe ? "city" : (zone !== "all" ? "zone" : "country");
 
@@ -717,21 +698,6 @@ function wireMobileBottomSheet() {
       sheet.style.transform = "";
     }
   });
-
-  // Resize sheet when mobile keyboard opens (only while city input is focused)
-  if (cityInput && window.visualViewport) {
-    const adjustForKeyboard = () => {
-      sheet.style.maxHeight = `${window.visualViewport.height * 0.85}px`;
-    };
-    cityInput.addEventListener("focus", () => {
-      adjustForKeyboard();
-      window.visualViewport.addEventListener("resize", adjustForKeyboard);
-    });
-    cityInput.addEventListener("blur", () => {
-      window.visualViewport.removeEventListener("resize", adjustForKeyboard);
-      sheet.style.maxHeight = "";
-    });
-  }
 }
 
 // ── Language toggle ──

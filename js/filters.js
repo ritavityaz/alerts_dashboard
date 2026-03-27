@@ -533,10 +533,27 @@ function populateCityResults(filterText) {
 
 // ── Mobile bottom sheet ──
 
+let sheetViewportCleanup = null;
+
 function openBottomSheet() {
   const backdrop = document.getElementById("filter-backdrop");
   const sheet = document.getElementById("filter-sheet");
   if (!backdrop || !sheet) return;
+
+  // Track visual viewport to resize sheet when keyboard opens/closes
+  if (sheetViewportCleanup) sheetViewportCleanup();
+  if (window.visualViewport) {
+    const onResize = () => {
+      sheet.style.maxHeight = `${window.visualViewport.height * 0.85}px`;
+    };
+    onResize();
+    window.visualViewport.addEventListener("resize", onResize);
+    sheetViewportCleanup = () => {
+      window.visualViewport.removeEventListener("resize", onResize);
+      sheet.style.maxHeight = "";
+      sheetViewportCleanup = null;
+    };
+  }
 
   // Sync bottom sheet UI with current store state
   const state = store.getState();
@@ -568,6 +585,7 @@ function closeBottomSheet() {
   const sheet = document.getElementById("filter-sheet");
   if (backdrop) backdrop.classList.remove("open");
   if (sheet) sheet.classList.remove("open");
+  if (sheetViewportCleanup) sheetViewportCleanup();
 }
 
 function populateMobileZoneSelect(select) {

@@ -279,7 +279,15 @@ html {
   transform: translateY(100%);
   transition: transform 0.3s ease;
   max-height: 85dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.bottom-sheet > :last-child {
   overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .bottom-sheet.open {

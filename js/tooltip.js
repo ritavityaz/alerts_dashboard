@@ -88,6 +88,11 @@ export function isTooltipPinned() {
   return pinned;
 }
 
+// Dismiss pinned tooltip on pinch-zoom to prevent stale positioning
+window.visualViewport?.addEventListener("resize", () => {
+  if (pinned) unpinTooltip();
+});
+
 // Tap outside bottom-bar tooltip to dismiss on mobile
 document.addEventListener("click", (event) => {
   if (bottomBarMode && !tooltip.contains(event.target)) {

@@ -379,8 +379,8 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
     const useZoneGrouping = uniqueCities.size > ZONE_GROUP_THRESHOLD;
 
     // Compute cluster timespan from all slices
-    const clusterStart = new Date(Math.min(...overlappingSlices.map((s) => +s.alert._start)));
-    const clusterEnd = new Date(Math.max(...overlappingSlices.map((s) => +s.alert._end)));
+    const clusterStart = new Date(overlappingSlices.reduce((min, s) => Math.min(min, +s.alert._start), Infinity));
+    const clusterEnd = new Date(overlappingSlices.reduce((max, s) => Math.max(max, +s.alert._end), -Infinity));
     const dateFmt = (d) => israelDateDM(+d);
     const spanStart = `${dateFmt(clusterStart)} ${timeFmt(clusterStart)}`;
     const spanEnd = `${dateFmt(clusterEnd)} ${timeFmt(clusterEnd)}`;
@@ -624,8 +624,8 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
           showTooltip(event.pageX, event.pageY, buildMergedTooltipHtml(cluster.slices));
           pinTooltip();
           if (onClusterSelect) {
-            const startMs = Math.min(...cluster.slices.map((s) => +s.alert._start));
-            const endMs = Math.max(...cluster.slices.map((s) => +s.alert._end));
+            const startMs = cluster.slices.reduce((min, s) => Math.min(min, +s.alert._start), Infinity);
+            const endMs = cluster.slices.reduce((max, s) => Math.max(max, +s.alert._end), -Infinity);
             onClusterSelect({ startMs, endMs });
           }
         }

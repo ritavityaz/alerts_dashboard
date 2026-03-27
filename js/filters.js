@@ -533,27 +533,10 @@ function populateCityResults(filterText) {
 
 // ── Mobile bottom sheet ──
 
-let sheetViewportCleanup = null;
-
 function openBottomSheet() {
   const backdrop = document.getElementById("filter-backdrop");
   const sheet = document.getElementById("filter-sheet");
   if (!backdrop || !sheet) return;
-
-  // Track visual viewport to resize sheet when keyboard opens/closes
-  if (sheetViewportCleanup) sheetViewportCleanup();
-  if (window.visualViewport) {
-    const onResize = () => {
-      sheet.style.maxHeight = `${window.visualViewport.height * 0.85}px`;
-    };
-    onResize();
-    window.visualViewport.addEventListener("resize", onResize);
-    sheetViewportCleanup = () => {
-      window.visualViewport.removeEventListener("resize", onResize);
-      sheet.style.maxHeight = "";
-      sheetViewportCleanup = null;
-    };
-  }
 
   // Sync bottom sheet UI with current store state
   const state = store.getState();
@@ -584,8 +567,14 @@ function closeBottomSheet() {
   const backdrop = document.getElementById("filter-backdrop");
   const sheet = document.getElementById("filter-sheet");
   if (backdrop) backdrop.classList.remove("open");
-  if (sheet) sheet.classList.remove("open");
-  if (sheetViewportCleanup) sheetViewportCleanup();
+  if (sheet) {
+    sheet.classList.remove("open");
+    // Clear drag artifacts after the 0.3s CSS transition completes
+    setTimeout(() => {
+      sheet.style.transform = "";
+      sheet.style.transition = "";
+    }, 350);
+  }
 }
 
 function populateMobileZoneSelect(select) {
@@ -687,22 +676,30 @@ function wireMobileBottomSheet() {
     closeBottomSheet();
   });
 
-  // Touch drag to dismiss (only when scrolled to top)
+  // Touch drag to dismiss (only when scrolled to top, with dead zone)
   let touchStartY = 0;
   let currentTranslateY = 0;
-  let allowDrag = false;
+  let isDragging = false;
 
   sheet.addEventListener("touchstart", (event) => {
-    allowDrag = sheet.scrollTop <= 0;
     touchStartY = event.touches[0].clientY;
     currentTranslateY = 0;
-    sheet.style.transition = "none";
-  });
+    isDragging = false;
+  }, { passive: true });
 
   sheet.addEventListener("touchmove", (event) => {
-    if (!allowDrag) return;
+    // Only allow drag when scrolled to top
+    if (Math.round(sheet.scrollTop) > 0) return;
+
     const deltaY = event.touches[0].clientY - touchStartY;
-    if (deltaY > 0) {
+
+    // Dead zone: need 8px downward before committing to drag
+    if (!isDragging && deltaY > 8) {
+      isDragging = true;
+      sheet.style.transition = "none";
+    }
+
+    if (isDragging && deltaY > 0) {
       currentTranslateY = deltaY;
       sheet.style.transform = `translateY(${deltaY}px)`;
       event.preventDefault();
@@ -710,12 +707,31 @@ function wireMobileBottomSheet() {
   }, { passive: false });
 
   sheet.addEventListener("touchend", () => {
+    if (!isDragging) return;
+
     sheet.style.transition = "";
     if (currentTranslateY > 100) {
       closeBottomSheet();
+    } else {
+      // Snap back — transform will animate to translateY(0) via .open class
+      sheet.style.transform = "";
     }
-    sheet.style.transform = "";
   });
+
+  // Resize sheet when mobile keyboard opens (only while city input is focused)
+  if (cityInput && window.visualViewport) {
+    const adjustForKeyboard = () => {
+      sheet.style.maxHeight = `${window.visualViewport.height * 0.85}px`;
+    };
+    cityInput.addEventListener("focus", () => {
+      adjustForKeyboard();
+      window.visualViewport.addEventListener("resize", adjustForKeyboard);
+    });
+    cityInput.addEventListener("blur", () => {
+      window.visualViewport.removeEventListener("resize", adjustForKeyboard);
+      sheet.style.maxHeight = "";
+    });
+  }
 }
 
 // ── Language toggle ──

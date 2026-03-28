@@ -99,6 +99,12 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
   const days = [];
   for (let d = firstDayMs; d <= lastDayMs; d = nextIsraelDay(d)) days.push(new Date(d));
 
+  // ── Pre-cached label strings (avoid Intl calls during zoom) ──
+  const dayLabels = days.map((d) => israelParts(+d).day);
+  const monthStarts = days.filter((d, i) => i === 0 || israelParts(+d).month !== israelParts(+days[i - 1]).month);
+  const monthStartIndices = monthStarts.map((d) => days.indexOf(d));
+  const monthLabelTexts = monthStarts.map((d) => d.toLocaleString(lang, { month: "short", timeZone: "Asia/Jerusalem" }));
+
   // Color legend
   const threatI18nKeys = {
     missiles: "timeline.missiles",
@@ -189,15 +195,13 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
     .attr("height", height)
     .style("touch-action", "none");
 
-  // ── Scales ──
+  // ── Scales (original ranges — NEVER mutated during zoom) ──
 
-  // Band scale for day columns (range updated by zoom)
   const x = d3.scaleBand()
     .domain(days)
     .range([0, dataWidth - margin.right])
     .padding(0.1);
 
-  // Linear scale for hours (range updated by zoom)
   const y = d3.scaleLinear()
     .domain([0, 24])
     .range([margin.top, height - margin.bottom]);
@@ -214,26 +218,32 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
   // ── Clip path ──
 
   const clipId = "timeline-clip-" + Math.random().toString(36).slice(2, 8);
-  svg.append("defs").append("clipPath")
-    .attr("id", clipId)
-    .append("rect")
-    .attr("width", availableWidth)
-    .attr("height", height);
+  const dataClipId = "timeline-data-clip-" + Math.random().toString(36).slice(2, 8);
+  svg.append("defs").call((defs) => {
+    defs.append("clipPath").attr("id", clipId)
+      .append("rect").attr("width", availableWidth).attr("height", height);
+    defs.append("clipPath").attr("id", dataClipId)
+      .append("rect").attr("y", margin.top).attr("width", availableWidth).attr("height", height - margin.top);
+  });
 
-  // ── Persistent groups (re-rendered on zoom) ──
+  // ── Groups: axes outside viewGroup, data inside viewGroup ──
 
   const gGrid = svg.append("g").attr("clip-path", `url(#${clipId})`);
   const gX = svg.append("g").attr("clip-path", `url(#${clipId})`);
   const gMonth = svg.append("g").attr("clip-path", `url(#${clipId})`);
-  const dataGroup = svg.append("g").attr("clip-path", `url(#${clipId})`);
-  const eventTickGroup = svg.append("g").attr("clip-path", `url(#${clipId})`);
-  const highlightGroup = svg.append("g").attr("clip-path", `url(#${clipId})`);
-  const overlayGroup = svg.append("g").attr("clip-path", `url(#${clipId})`);
+
+  // viewClip: static wrapper that clips data to below the x-axis
+  // viewGroup: geometric transform applied here — children positioned ONCE with original scales
+  const viewClip = svg.append("g").attr("clip-path", `url(#${dataClipId})`);
+  const viewGroup = viewClip.append("g");
+  const dataGroup = viewGroup.append("g");
+  const eventTickGroup = viewGroup.append("g");
+  const highlightGroup = viewGroup.append("g");
+  const overlayGroup = viewGroup.append("g");
 
   const gY = yAxisSvg.append("g").attr("transform", `translate(${yAxisWidth},0)`);
 
   const timeFmt = (d) => israelTimeHHMM(+d);
-  const monthStarts = days.filter((d, i) => i === 0 || israelParts(+d).month !== israelParts(+days[i - 1]).month);
 
   // ── Y-axis format helper ──
 
@@ -245,13 +255,12 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
     return min === 0 ? `${h12}${suffix}` : `${h12}:${String(min).padStart(2, "0")}${suffix}`;
   }
 
-  /** Pick the finest tick step where labels won't overlap given the current Y zoom. */
-  function yTickStep() {
-    const pxPerHour = Math.abs(y(1) - y(0));
-    // ~18px minimum between ticks to avoid overlap
-    if (pxPerHour >= 36) return 0.5;  // 30 min
-    if (pxPerHour >= 18) return 1;    // 1 hour
-    return 3;                          // 3 hours
+  /** Pick the finest tick step where labels won't overlap given display Y scale. */
+  function yTickStep(displayY) {
+    const pxPerHour = Math.abs(displayY(1) - displayY(0));
+    if (pxPerHour >= 36) return 0.5;
+    if (pxPerHour >= 18) return 1;
+    return 3;
   }
 
   // ── Cluster / tooltip helpers (unchanged) ──
@@ -491,23 +500,19 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
 
   let slicesByDay = new Map();
   let sliceIndex = null;
-  let currentSlices = [];
-  let currentPoints = [];
-  let currentPointsVisible = false;
   let currentTransform = d3.zoomIdentity;
-  let lastHighlight = null; // { type: "gap"|"hourRange", args: [...] }
 
   function setSliceIndex(allAlerts) {
     sliceIndex = precomputeSliceIndex(allAlerts);
   }
 
-  // ── Hit-testing (works automatically with zoomed scales) ──
+  // ── Hit-testing (uses viewGroup local coords — original scale space) ──
 
   const hoverToleranceHours = 0.15;
 
   function hitTestCluster(event, hoveredDay) {
-    const cursorYInSvg = d3.pointer(event, svg.node())[1];
-    const cursorHour = Math.max(0, Math.min(24, y.invert(cursorYInSvg)));
+    const cursorYInLocal = d3.pointer(event, viewGroup.node())[1];
+    const cursorHour = Math.max(0, Math.min(24, y.invert(cursorYInLocal)));
     const slicesForDay = slicesByDay.get(+hoveredDay) || [];
 
     const slicesUnderCursor = slicesForDay.filter((slice) => {
@@ -528,7 +533,9 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
       .attr("stroke-width", (slice) => clusterSet.has(slice) ? 1 : 0);
   }
 
-  // ── Highlight rendering helpers ──
+  // ── Highlight rendering (positioned in original scale space, inside viewGroup) ──
+
+  let lastHighlight = null;
 
   function renderHighlightGap(startMs, endMs) {
     highlightGroup.selectAll("*").remove();
@@ -598,109 +605,32 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
     }
   }
 
-  function replayHighlight() {
-    if (!lastHighlight) return;
-    if (lastHighlight.type === "gap") renderHighlightGap(...lastHighlight.args);
-    else renderHighlightHourRange(...lastHighlight.args);
-  }
+  // ── renderData() — slow path, called only on data/filter changes ──
 
-  // ── redraw() — the core zoom/render function ──
-
-  function redraw(transform) {
-    currentTransform = transform;
-
-    // Per-axis zoom clamping: min 1 day visible (X), min 3 hours visible (Y)
-    const maxKx = days.length;
-    const maxKy = 8; // 24 / 3
-    const kx = Math.min(transform.k, maxKx);
-    const ky = Math.min(transform.k, maxKy);
-
-    // Build per-axis zoomed proxy scales
-    const zx = d3.zoomIdentity.translate(transform.x, 0).scale(kx).rescaleX(xProxy);
-    const zy = d3.zoomIdentity.translate(0, transform.y).scale(ky).rescaleY(yProxy);
-
-    // Update the rendering scales' ranges
-    x.range([zx(0), zx(days.length)]);
-    y.range([zy(0), zy(24)]);
-
+  function renderData(slices, points, pointsVisible) {
     const bw = x.bandwidth();
 
-    // ── X-axis (pinned to the top of the visible area) ──
-    gX.selectAll("*").remove();
-    const xAxisG = gX.append("g").attr("transform", `translate(0,${margin.top})`);
-    // Only render labels that fit
-    const labelEvery = bw < 7 ? 7 : bw < 12 ? 3 : 1;
-    for (let i = 0; i < days.length; i++) {
-      const day = days[i];
-      const cx = x(day) + bw / 2;
-      if (cx < -bw || cx > availableWidth + bw) continue; // off-screen
-      if (i % labelEvery !== 0) continue;
-      xAxisG.append("text")
-        .attr("x", cx)
-        .attr("y", -4)
-        .attr("text-anchor", "middle")
-        .attr("fill", "#64748b")
-        .attr("font-size", bw < 12 ? "7px" : "9px")
-        .text(israelParts(+day).day);
-    }
-
-    // ── Month labels ──
-    gMonth.selectAll("*").remove();
-    for (const d of monthStarts) {
-      const cx = x(d) + bw / 2;
-      if (cx < -bw || cx > availableWidth + bw) continue;
-      gMonth.append("text")
-        .attr("x", cx)
-        .attr("y", 10)
-        .attr("text-anchor", "middle")
-        .attr("fill", "#94a3b8")
-        .attr("font-size", "10px")
-        .attr("font-weight", "bold")
-        .text(d.toLocaleString(lang, { month: "short", timeZone: "Asia/Jerusalem" }));
-    }
-
-    // ── Y-axis (fixed left SVG) — adaptive tick resolution ──
-    const step = yTickStep();
-    const yTicks = d3.range(0, 24 + step, step);
-    gY.selectAll("*").remove();
-    gY.call(
-      d3.axisLeft(y)
-        .tickValues(yTicks)
-        .tickFormat(formatHour)
-        .tickSize(0)
-    )
-    .call((g) => g.select(".domain").remove())
-    .call((g) => g.selectAll(".tick text").attr("fill", "#64748b").attr("font-size", "10px").attr("dx", "-4"));
-
-    // ── Gridlines — match Y-axis tick resolution ──
-    gGrid.selectAll("*").remove();
-    for (const h of yTicks) {
-      const py = y(h);
-      if (py < -10 || py > height + 10) continue;
-      gGrid.append("line")
-        .attr("x1", 0).attr("x2", availableWidth)
-        .attr("y1", py).attr("y2", py)
-        .attr("stroke", "#1e293b")
-        .attr("stroke-dasharray", "2,2");
-    }
-
-    // ── Alert bars ──
+    // Alert bars — positioned with original scales
     dataGroup.selectAll(".alert-bar")
-      .data(currentSlices)
-      .join("rect")
-      .attr("class", "alert-bar")
-      .attr("x", (slice) => x(slice.day))
+      .data(slices)
+      .join(
+        (enter) => enter.append("rect")
+          .attr("class", "alert-bar")
+          .attr("fill", (s) => threatColors[s.alert.threat_type] || "#6366f1")
+          .attr("fill-opacity", 0.5)
+          .attr("rx", 1),
+        (update) => update
+          .attr("fill", (s) => threatColors[s.alert.threat_type] || "#6366f1"),
+      )
+      .attr("x", (s) => x(s.day))
       .attr("width", bw)
-      .attr("y", (slice) => y(slice.y0))
-      .attr("height", (slice) => Math.max(1, y(slice.y1) - y(slice.y0)))
-      .attr("fill", (slice) => threatColors[slice.alert.threat_type] || "#6366f1")
-      .attr("fill-opacity", 0.5)
-      .attr("rx", 1);
+      .attr("y", (s) => y(s.y0))
+      .attr("height", (s) => Math.max(1, y(s.y1) - y(s.y0)));
 
-    // ── Event ticks ──
-    if (currentPointsVisible && currentPoints.length) {
+    // Event ticks
+    if (pointsVisible && points.length) {
       eventTickGroup.selectAll(".event-tick")
-        .data(currentPoints, (d, i) => `${+d.day}-${d.data}-${d.group_id}-${i}`)
+        .data(points, (d, i) => `${+d.day}-${d.data}-${d.group_id}-${i}`)
         .join("line")
         .attr("class", "event-tick")
         .attr("x1", (d) => x(d.day))
@@ -715,7 +645,7 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
       eventTickGroup.selectAll(".event-tick").remove();
     }
 
-    // ── Overlay rects (hit targets) ──
+    // Overlay hit targets — positioned with original scales
     overlayGroup.selectAll(".day-overlay")
       .data(days)
       .join("rect")
@@ -726,22 +656,110 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
       .attr("height", y(24) - y(0))
       .attr("fill", "transparent")
       .attr("pointer-events", "all");
-
-    // ── Highlights ──
-    replayHighlight();
   }
 
-  // ── Overlay event handlers (bound once, survive redraws) ──
+  // ── redraw() — fast path, called every zoom frame ──
+  // Only updates: 1 geometric transform + axis labels + gridlines
+
+  const maxKx = days.length;
+  const maxKy = 8; // 24 / 3 = min 3 hours visible
+
+  function redraw(transform) {
+    currentTransform = transform;
+
+    // Per-axis zoom clamping
+    const kx = Math.min(transform.k, maxKx);
+    const ky = Math.min(transform.k, maxKy);
+
+    // Zoomed proxy scales (for axis label positioning)
+    const zx = d3.zoomIdentity.translate(transform.x, 0).scale(kx).rescaleX(xProxy);
+    const zy = d3.zoomIdentity.translate(0, transform.y).scale(ky).rescaleY(yProxy);
+
+    // Geometric transform on viewGroup — moves all data elements in one DOM write
+    // Maps original pixel (ox, oy) → screen (kx*ox + zx(0), ky*oy + zy(0) - ky*margin.top)
+    viewGroup.attr("transform",
+      `translate(${zx(0)},${zy(0) - ky * margin.top}) scale(${kx},${ky})`);
+
+    // Display scale for Y-axis labels (maps hours → screen pixels)
+    const displayY = d3.scaleLinear().domain([0, 24]).range([zy(0), zy(24)]);
+
+    // Zoomed bandwidth for X-axis label density
+    const zoomedBw = (zx(1) - zx(0)) * (1 - 0.1 * 2); // approximate zoomed bandwidth accounting for padding
+
+    // ── X-axis (pinned to top, in screen space) ──
+    gX.selectAll("*").remove();
+    const xAxisG = gX.append("g").attr("transform", `translate(0,${margin.top})`);
+    const labelEvery = zoomedBw < 7 ? 7 : zoomedBw < 12 ? 3 : 1;
+    for (let i = 0; i < days.length; i++) {
+      if (i % labelEvery !== 0) continue;
+      const cx = zx(i) + zoomedBw / 2 + (zx(1) - zx(0)) * 0.1; // center of zoomed column
+      if (cx < -20 || cx > availableWidth + 20) continue;
+      xAxisG.append("text")
+        .attr("x", cx)
+        .attr("y", -4)
+        .attr("text-anchor", "middle")
+        .attr("fill", "#64748b")
+        .attr("font-size", zoomedBw < 12 ? "7px" : "9px")
+        .text(dayLabels[i]);
+    }
+
+    // ── Month labels (in screen space) ──
+    gMonth.selectAll("*").remove();
+    for (let mi = 0; mi < monthStarts.length; mi++) {
+      const i = monthStartIndices[mi];
+      const cx = zx(i) + zoomedBw / 2 + (zx(1) - zx(0)) * 0.1;
+      if (cx < -20 || cx > availableWidth + 20) continue;
+      gMonth.append("text")
+        .attr("x", cx)
+        .attr("y", 10)
+        .attr("text-anchor", "middle")
+        .attr("fill", "#94a3b8")
+        .attr("font-size", "10px")
+        .attr("font-weight", "bold")
+        .text(monthLabelTexts[mi]);
+    }
+
+    // ── Y-axis (fixed left SVG, uses display scale) ──
+    const step = yTickStep(displayY);
+    const yTicks = d3.range(0, 24 + step, step);
+    gY.selectAll("*").remove();
+    gY.call(
+      d3.axisLeft(displayY)
+        .tickValues(yTicks)
+        .tickFormat(formatHour)
+        .tickSize(0)
+    )
+    .call((g) => g.select(".domain").remove())
+    .call((g) => g.selectAll(".tick text").attr("fill", "#64748b").attr("font-size", "10px").attr("dx", "-4"));
+
+    // ── Gridlines (in screen space, match Y-axis ticks) ──
+    gGrid.selectAll("*").remove();
+    for (const h of yTicks) {
+      const py = displayY(h);
+      if (py < -10 || py > height + 10) continue;
+      gGrid.append("line")
+        .attr("x1", 0).attr("x2", availableWidth)
+        .attr("y1", py).attr("y2", py)
+        .attr("stroke", "#1e293b")
+        .attr("stroke-dasharray", "2,2");
+    }
+  }
+
+  // ── Overlay event handlers (bound once on the group) ──
+
+  function findHoveredDay(event) {
+    const [mx] = d3.pointer(event, viewGroup.node());
+    const bw = x.bandwidth();
+    return days.find((day) => {
+      const dx = x(day);
+      return dx != null && mx >= dx && mx < dx + bw;
+    });
+  }
 
   overlayGroup
     .on("pointermove", (event) => {
       if (isTooltipPinned()) return;
-      // Find which day column the pointer is over
-      const [mx] = d3.pointer(event, svg.node());
-      const hoveredDay = days.find((day) => {
-        const dx = x(day);
-        return dx != null && mx >= dx && mx < dx + x.bandwidth();
-      });
+      const hoveredDay = findHoveredDay(event);
       if (!hoveredDay) {
         hideTooltip();
         resetBarHighlight();
@@ -762,12 +780,7 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
       resetBarHighlight();
     })
     .on("click", (event) => {
-      const [mx] = d3.pointer(event, svg.node());
-      const hoveredDay = days.find((day) => {
-        const dx = x(day);
-        return dx != null && mx >= dx && mx < dx + x.bandwidth();
-      });
-
+      const hoveredDay = findHoveredDay(event);
       const wasPinned = isTooltipPinned();
       const cluster = hoveredDay ? hitTestCluster(event, hoveredDay) : null;
 
@@ -791,8 +804,6 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
 
   // ── d3.zoom behavior ──
 
-  const maxKx = days.length;
-  const maxKy = 8;
   const zoom = d3.zoom()
     .scaleExtent([1, Math.max(maxKx, maxKy)])
     .translateExtent([[0, 0], [dataWidth, height]])
@@ -816,18 +827,12 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
 
   // ── Data update ──
 
+  let currentPointsVisible = false;
+  let currentPoints = [];
+
   function update(alerts) {
-    let slices;
-    if (sliceIndex) {
-      slices = [];
-      for (const a of alerts) {
-        const key = incidentKey(a);
-        const cached = sliceIndex.get(key);
-        if (cached) slices.push(...cached);
-      }
-    } else {
-      slices = dayslice(alerts);
-    }
+    setSliceIndex(alerts);
+    let slices = dayslice(alerts);
 
     slicesByDay = new Map();
     for (const slice of slices) {
@@ -836,8 +841,7 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
       slicesByDay.get(dayKey).push(slice);
     }
 
-    currentSlices = slices;
-    redraw(currentTransform);
+    renderData(slices, currentPoints, currentPointsVisible);
   }
 
   // ── Initial zoom: pan to rightmost days ──
@@ -866,10 +870,15 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
     showEventLegend(isCity);
     currentPointsVisible = isCity;
     currentPoints = isCity ? dayslicePoints(rawEvents) : [];
-    redraw(currentTransform);
+    // Re-render data elements (ticks changed)
+    renderData(
+      Array.from(slicesByDay.values()).flat(),
+      currentPoints,
+      currentPointsVisible,
+    );
   });
 
-  // ── Public highlight API (stores params for replay on zoom) ──
+  // ── Public highlight API ──
 
   function highlightGap(startMs, endMs) {
     lastHighlight = startMs != null ? { type: "gap", args: [startMs, endMs] } : null;

@@ -13,7 +13,7 @@ import { t, lang, formatNumber } from "./i18n.js";
 import * as store from "./store.js";
 import * as queries from "./queries.js";
 import { mountAll, isMobile, onViewportChange } from "./framework.js";
-import { initDB, queryAllIncidents } from "./db.js";
+import { initDB } from "./db.js";
 import { onSignal } from "./queries.js";
 import * as filters from "./filters.js";
 import * as slider from "./slider.js";
@@ -205,10 +205,6 @@ async function init() {
 
   // ── Mount framework-driven components (statsPanel) ──
   mountAll();
-
-  // ── Precompute timeline day-slices for all incidents (one-time cost) ──
-  const allIncidents = await queryAllIncidents();
-  timeline.setSliceIndex(allIncidents);
 
   // ── Run all queries for initial render ──
   await queries.runAffectedQueries(null);

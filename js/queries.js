@@ -13,6 +13,7 @@ import {
   queryStats,
   querySparkline,
   queryFilteredEvents,
+  queryFilteredSlices,
   queryFilteredIncidentEvents,
   queryHeatmapBins,
   queryEventsByZone,
@@ -99,6 +100,10 @@ const queryDefinitions = {
   filteredAlertEvents: {
     depends: ["threat", "ctx", "zone", "city"],
     run: (filters) => queryFilteredEvents(filters.threat, filters.ctx, filters.zone, filters.city),
+  },
+  filteredAlertSlices: {
+    depends: ["threat", "ctx", "zone", "city"],
+    run: (filters) => queryFilteredSlices(filters.threat, filters.ctx, filters.zone, filters.city),
   },
   heatmapBins: {
     depends: ["threat", "ctx", "zone", "city"],

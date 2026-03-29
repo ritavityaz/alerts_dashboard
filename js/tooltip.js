@@ -53,15 +53,18 @@ export function showTooltip(pageX, pageY, html) {
   tooltip.style.top = `${top}px`;
 }
 
+/** Update content of an already-pinned tooltip (bypasses the pinned guard). */
+export function updateTooltipContent(html) {
+  tooltip.innerHTML = html;
+  if (pinned) appendCloseBtn();
+}
+
 export function hideTooltip() {
   if (pinned) return;
   tooltip.style.display = "none";
 }
 
-export function pinTooltip() {
-  pinned = true;
-  tooltip.style.pointerEvents = "auto";
-
+function appendCloseBtn() {
   const closeBtn = document.createElement("span");
   closeBtn.textContent = "\u00d7";
   closeBtn.style.cssText = "position:absolute;top:2px;inset-inline-end:6px;cursor:pointer;font-size:14px;line-height:1;opacity:0.6";
@@ -73,6 +76,12 @@ export function pinTooltip() {
   });
   tooltip.style.paddingInlineEnd = "20px";
   tooltip.appendChild(closeBtn);
+}
+
+export function pinTooltip() {
+  pinned = true;
+  tooltip.style.pointerEvents = "auto";
+  appendCloseBtn();
 }
 
 export function unpinTooltip({ silent = false } = {}) {

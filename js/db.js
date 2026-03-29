@@ -264,6 +264,245 @@ export async function queryAllIncidents() {
 }
 
 /**
+ * Get filtered incidents pre-sliced across Israel-timezone day boundaries.
+ * Each multi-day incident is expanded into one row per day it spans,
+ * with day_ms (UTC epoch ms of Israel midnight), y0 and y1 (fractional hours 0–24).
+ * Returns array of { day, y0, y1, alert } matching the shape timeline.js expects.
+ */
+// Shared SQL CTEs for day-slicing incidents into per-day y0/y1 ranges
+function sliceCTEs(where) {
+  return `
+    WITH base AS (
+      SELECT *,
+        timezone('Asia/Jerusalem', to_timestamp(start_ms / 1000.0)) AS local_start,
+        timezone('Asia/Jerusalem', to_timestamp(end_ms   / 1000.0)) AS local_end
+      FROM incidents ${where}
+    ),
+    day_expand AS (
+      SELECT b.*,
+        UNNEST(generate_series(
+          CAST(b.local_start AS DATE),
+          CAST(b.local_end   AS DATE),
+          INTERVAL 1 DAY
+        )) AS local_day
+      FROM base b
+    ),
+    day_series AS (
+      SELECT d.*,
+        epoch_ms(timezone('Asia/Jerusalem', CAST(local_day AS TIMESTAMP))) AS day_ms,
+        CASE WHEN local_day = CAST(local_start AS DATE)
+          THEN EXTRACT(HOUR FROM local_start)
+             + EXTRACT(MINUTE FROM local_start) / 60.0
+             + EXTRACT(SECOND FROM local_start) / 3600.0
+          ELSE 0
+        END AS y0,
+        CASE WHEN local_day = CAST(local_end AS DATE)
+          THEN EXTRACT(HOUR FROM local_end)
+             + EXTRACT(MINUTE FROM local_end) / 60.0
+             + EXTRACT(SECOND FROM local_end) / 3600.0
+          ELSE 24
+        END AS y1
+      FROM day_expand d
+    )`;
+}
+
+export async function queryFilteredSlices(threat, ctx, zone, city) {
+  const where = filterWhere("incidents", { threat, ctx, zone, city });
+
+  if (ctx === "city") {
+    return queryRawSlices(where);
+  }
+  return queryMergedSlices(where);
+}
+
+async function queryRawSlices(where) {
+  const result = await conn.query(`
+    ${sliceCTEs(where)}
+    SELECT
+      data, threat_type, start_ms, end_ms, zone_en, name_en,
+      pattern, n_events, group_id, duration_min,
+      day_ms, y0, y1
+    FROM day_series
+  `);
+
+  const alertCache = new Map();
+  const slices = [];
+
+  const dataCol = result.getChild("data");
+  const ttCol = result.getChild("threat_type");
+  const sCol = result.getChild("start_ms");
+  const eCol = result.getChild("end_ms");
+  const enCol = result.getChild("name_en");
+  const zoneCol = result.getChild("zone_en");
+  const patCol = result.getChild("pattern");
+  const neCol = result.getChild("n_events");
+  const gidCol = result.getChild("group_id");
+  const durCol = result.getChild("duration_min");
+  const dayCol = result.getChild("day_ms");
+  const y0Col = result.getChild("y0");
+  const y1Col = result.getChild("y1");
+
+  for (let i = 0; i < result.numRows; i++) {
+    const y0 = Number(y0Col.get(i));
+    const y1 = Number(y1Col.get(i));
+    if (y0 === 0 && y1 === 0 && i > 0) continue;
+
+    const data = dataCol.get(i);
+    const gid = Number(gidCol.get(i));
+    const key = data + "|" + gid;
+
+    let alert = alertCache.get(key);
+    if (!alert) {
+      alert = {
+        data,
+        threat_type: ttCol.get(i),
+        _start: new Date(Number(sCol.get(i))),
+        _end: new Date(Number(eCol.get(i))),
+        NAME_HE: data,
+        NAME_EN: enCol.get(i) || data,
+        zone_en: zoneCol.get(i) || "",
+        pattern: patCol.get(i),
+        n_events: Number(neCol.get(i)),
+        group_id: gid,
+        duration_min: Number(durCol.get(i)),
+      };
+      alertCache.set(key, alert);
+    }
+
+    slices.push({
+      alert,
+      day: new Date(Number(dayCol.get(i))),
+      y0,
+      y1,
+    });
+  }
+  return slices;
+}
+
+async function queryMergedSlices(where) {
+  const result = await conn.query(`
+    ${sliceCTEs(where)},
+    with_gap AS (
+      SELECT day_ms, threat_type, y0, y1,
+        CASE WHEN y0 > MAX(y1) OVER (
+          PARTITION BY day_ms
+          ORDER BY y0
+          ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        ) THEN 1 ELSE 0 END AS new_cluster
+      FROM day_series
+      WHERE NOT (y0 = 0 AND y1 = 0)
+    ),
+    clustered AS (
+      SELECT *,
+        SUM(new_cluster) OVER (
+          PARTITION BY day_ms ORDER BY y0
+        ) AS cluster_id
+      FROM with_gap
+    )
+    SELECT
+      day_ms,
+      MIN(y0) AS y0, MAX(y1) AS y1,
+      COUNT(*) AS n_incidents,
+      COUNT(*) FILTER (WHERE threat_type = 'missiles') AS n_missiles,
+      COUNT(*) FILTER (WHERE threat_type = 'drones') AS n_drones,
+      COUNT(*) FILTER (WHERE threat_type = 'infiltration') AS n_infiltration,
+      COUNT(*) FILTER (WHERE threat_type = 'false_alarm') AS n_false_alarm
+    FROM clustered
+    GROUP BY day_ms, cluster_id
+  `);
+
+  const bars = [];
+  const dayCol = result.getChild("day_ms");
+  const y0Col = result.getChild("y0");
+  const y1Col = result.getChild("y1");
+  const nCol = result.getChild("n_incidents");
+  const nMisCol = result.getChild("n_missiles");
+  const nDroCol = result.getChild("n_drones");
+  const nInfCol = result.getChild("n_infiltration");
+  const nFaCol = result.getChild("n_false_alarm");
+
+  for (let i = 0; i < result.numRows; i++) {
+    bars.push({
+      day: new Date(Number(dayCol.get(i))),
+      y0: Number(y0Col.get(i)),
+      y1: Number(y1Col.get(i)),
+      n_incidents: Number(nCol.get(i)),
+      n_missiles: Number(nMisCol.get(i)),
+      n_drones: Number(nDroCol.get(i)),
+      n_infiltration: Number(nInfCol.get(i)),
+      n_false_alarm: Number(nFaCol.get(i)),
+    });
+  }
+  return bars;
+}
+
+/** On-click detail query: fetch raw slices for a specific merged bar's scope. */
+export async function queryClusterDetail(threat, ctx, zone, city, dayMs, y0, y1) {
+  const where = filterWhere("incidents", { threat, ctx, zone, city });
+
+  const result = await conn.query(`
+    ${sliceCTEs(where)}
+    SELECT
+      data, threat_type, start_ms, end_ms, zone_en, name_en,
+      pattern, n_events, group_id, duration_min,
+      day_ms, y0, y1
+    FROM day_series
+    WHERE day_ms = ${dayMs}
+      AND y1 > ${y0} AND y0 < ${y1}
+      AND NOT (y0 = 0 AND y1 = 0)
+  `);
+
+  const alertCache = new Map();
+  const slices = [];
+
+  const dataCol = result.getChild("data");
+  const ttCol = result.getChild("threat_type");
+  const sCol = result.getChild("start_ms");
+  const eCol = result.getChild("end_ms");
+  const enCol = result.getChild("name_en");
+  const zoneCol = result.getChild("zone_en");
+  const patCol = result.getChild("pattern");
+  const neCol = result.getChild("n_events");
+  const gidCol = result.getChild("group_id");
+  const durCol = result.getChild("duration_min");
+  const dayCol2 = result.getChild("day_ms");
+  const y0Col2 = result.getChild("y0");
+  const y1Col2 = result.getChild("y1");
+
+  for (let i = 0; i < result.numRows; i++) {
+    const data = dataCol.get(i);
+    const gid = Number(gidCol.get(i));
+    const key = data + "|" + gid;
+
+    let alert = alertCache.get(key);
+    if (!alert) {
+      alert = {
+        data,
+        threat_type: ttCol.get(i),
+        _start: new Date(Number(sCol.get(i))),
+        _end: new Date(Number(eCol.get(i))),
+        NAME_HE: data,
+        NAME_EN: enCol.get(i) || data,
+        zone_en: zoneCol.get(i) || "",
+        pattern: patCol.get(i),
+        n_events: Number(neCol.get(i)),
+        group_id: gid,
+        duration_min: Number(durCol.get(i)),
+      };
+      alertCache.set(key, alert);
+    }
+
+    slices.push({
+      alert,
+      day: new Date(Number(dayCol2.get(i))),
+      y0: Number(y0Col2.get(i)),
+      y1: Number(y1Col2.get(i)),
+    });
+  }
+  return slices;
+}
+
+/**
  * Get events grouped by zone and threat type, for computing alert duration per zone.
  * Returns array of {zone, category, start_ms, end_ms, cities} sorted by zone total desc.
  */
@@ -433,7 +672,9 @@ export async function queryDailyShelterDuration(startMs, endMs, ctx, zone, city)
 
 /**
  * Get individual events within incident groups (for timeline tick marks).
- * Returns array of {data, ts, event_type, category_desc, threat_type, group_id}.
+ * Includes pre-computed day_ms and y_hour for Israel-timezone positioning.
+ * Filters out 'other' event types in SQL.
+ * Returns array of {data, ts, event_type, category_desc, threat_type, group_id, day, yHour}.
  */
 export async function queryFilteredIncidentEvents(threat, ctx, zone, city) {
   const clauses = [];
@@ -448,10 +689,17 @@ export async function queryFilteredIncidentEvents(threat, ctx, zone, city) {
   const where = clauses.length > 0 ? "WHERE " + clauses.join(" AND ") : "";
 
   const result = await conn.query(`
-    SELECT ie.data, ie.ts, ie.event_type, ie.category_desc, ie.threat_type, ie.group_id
+    SELECT ie.data, ie.ts, ie.event_type, ie.category_desc, ie.threat_type, ie.group_id,
+      epoch_ms(timezone('Asia/Jerusalem',
+        CAST(CAST(timezone('Asia/Jerusalem', to_timestamp(ie.ts / 1000.0)) AS DATE) AS TIMESTAMP)
+      )) AS day_ms,
+      EXTRACT(HOUR FROM timezone('Asia/Jerusalem', to_timestamp(ie.ts / 1000.0)))
+        + EXTRACT(MINUTE FROM timezone('Asia/Jerusalem', to_timestamp(ie.ts / 1000.0))) / 60.0
+        AS y_hour
     FROM incident_events ie
     INNER JOIN (SELECT DISTINCT data, group_id FROM incidents ${where}) inc
       ON ie.data = inc.data AND ie.group_id = inc.group_id
+    WHERE ie.event_type != 'other'
     ORDER BY ie.ts
   `);
 
@@ -462,6 +710,8 @@ export async function queryFilteredIncidentEvents(threat, ctx, zone, city) {
   const descCol = result.getChild("category_desc");
   const ttCol = result.getChild("threat_type");
   const gidCol = result.getChild("group_id");
+  const dayCol = result.getChild("day_ms");
+  const yhCol = result.getChild("y_hour");
   for (let i = 0; i < result.numRows; i++) {
     rows.push({
       data: dataCol.get(i),
@@ -470,6 +720,8 @@ export async function queryFilteredIncidentEvents(threat, ctx, zone, city) {
       category_desc: descCol.get(i),
       threat_type: ttCol.get(i),
       group_id: Number(gidCol.get(i)),
+      day: new Date(Number(dayCol.get(i))),
+      yHour: Number(yhCol.get(i)),
     });
   }
   return rows;

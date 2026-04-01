@@ -447,7 +447,7 @@ export function createTimeline(container, { minMs, maxMs, resolveZoneName = (z) 
     // ── X-axis day labels — reposition pre-created elements ──
     for (let i = 0; i < days.length; i++) {
       const el = dayLabelEls[i];
-      if (i % labelEvery !== 0) { el.setAttribute("display", "none"); continue; }
+      if (i % labelEvery !== 0 && i !== days.length - 1) { el.setAttribute("display", "none"); continue; }
       const cx = zx(i) + colOffset;
       if (cx < -20 || cx > availableWidth + 20) { el.setAttribute("display", "none"); continue; }
       el.removeAttribute("display");

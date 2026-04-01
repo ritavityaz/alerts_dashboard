@@ -285,39 +285,6 @@ The timeline shows alerts by time of day, and the heatmap highlights recurring p
   <!-- ── Tooltip (desktop: floating, mobile: bottom bar) ── -->
   <div id="tooltip" class="tooltip"></div>
 
-  <!-- ── Mobile filter bottom sheet ── -->
-  <div id="filter-backdrop" class="bottom-sheet-backdrop sm:hidden"></div>
-  <div id="filter-sheet" class="bottom-sheet sm:hidden" data-component="mobileFilters">
-    <div class="bottom-sheet-handle"></div>
-    <div class="px-4 pb-6 pt-2">
-      <div class="mb-4">
-        <div class="text-gray-400 text-xs font-semibold mb-2" data-i18n="stats.alertsByThreat">Alerts by Threat</div>
-        <div id="mobile-threat-chips" class="flex flex-wrap gap-2">
-          <button data-value="all" class="px-4 py-2 rounded-full border border-gray-700 bg-indigo-600 text-white text-sm cursor-pointer" data-i18n="filters.allThreats">All threats</button>
-          <button data-value="1" class="px-4 py-2 rounded-full border border-gray-700 bg-gray-800 text-gray-400 text-sm cursor-pointer" data-i18n="filters.missiles">Missiles</button>
-          <button data-value="2" class="px-4 py-2 rounded-full border border-gray-700 bg-gray-800 text-gray-400 text-sm cursor-pointer" data-i18n="filters.drones">Drones</button>
-          <button data-value="10" class="px-4 py-2 rounded-full border border-gray-700 bg-gray-800 text-gray-400 text-sm cursor-pointer" data-i18n="filters.infiltrations">Infiltrations</button>
-        </div>
-      </div>
-      <div class="mb-4">
-        <div class="text-gray-400 text-xs font-semibold mb-2" data-i18n="filters.city">City</div>
-        <select id="mobile-city-filter" class="bg-gray-800 text-gray-200 text-sm border border-gray-700 rounded px-3 py-2 w-full">
-          <option value="" data-i18n="filters.allCities">All cities</option>
-        </select>
-      </div>
-      <div class="mb-4">
-        <div class="text-gray-400 text-xs font-semibold mb-2" data-i18n="filters.zone">Zone</div>
-        <select id="mobile-zone-filter" class="bg-gray-800 text-gray-200 text-sm border border-gray-700 rounded px-3 py-2 w-full">
-          <option value="all" data-i18n="filters.allZones">All zones</option>
-        </select>
-      </div>
-      <div class="flex gap-3">
-        <button id="mobile-reset" class="flex-1 px-4 py-2 rounded border border-gray-700 bg-gray-800 text-gray-400 text-sm cursor-pointer" data-i18n="filters.reset">Reset</button>
-        <button id="mobile-apply" class="flex-1 px-4 py-2 rounded bg-indigo-600 text-white text-sm cursor-pointer">Apply</button>
-      </div>
-    </div>
-  </div>
-
   <!-- ── Mobile bottom nav ── -->
   <nav id="mobile-nav" class="fixed bottom-0 inset-x-0 z-30 bg-gray-950/95 backdrop-blur-sm border-t border-gray-800 flex justify-around py-1.5 sm:hidden">
     <a href="#map-section" class="flex flex-col items-center text-gray-400 text-[10px] gap-0.5 py-1 px-3">

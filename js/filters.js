@@ -30,7 +30,6 @@ export function init(geojson) {
   wireChips();
   wireContextToggle();
   wireDesktopDropdowns();
-  wireMobileBottomSheet();
   wireLangToggle();
   subscribeToStore();
 }
@@ -95,8 +94,6 @@ export function selectCityFromMap(cityHe) {
 }
 
 // ── Helpers ──
-
-const isMobile = () => window.matchMedia("(max-width: 639px)").matches;
 
 const threatLabels = {
   all: "filters.allThreats",
@@ -200,30 +197,16 @@ function wireChips() {
   const chipTime = document.getElementById("chip-time");
   const chipReset = document.getElementById("chip-reset");
 
-  // On mobile, all filter chips open the bottom sheet
-  // On desktop, they open their own dropdown
   chipThreat?.addEventListener("click", () => {
-    if (isMobile()) {
-      openBottomSheet();
-    } else {
-      toggleDropdown(chipThreat, "dropdown-threat");
-    }
+    toggleDropdown(chipThreat, "dropdown-threat");
   });
 
   chipZone?.addEventListener("click", () => {
-    if (isMobile()) {
-      openBottomSheet();
-    } else {
-      toggleDropdown(chipZone, "dropdown-zone");
-    }
+    toggleDropdown(chipZone, "dropdown-zone");
   });
 
   chipCity?.addEventListener("click", () => {
-    if (isMobile()) {
-      openBottomSheet();
-    } else {
-      toggleDropdown(chipCity, "dropdown-city");
-    }
+    toggleDropdown(chipCity, "dropdown-city");
   });
 
   // Time chip opens time range dropdown
@@ -531,174 +514,6 @@ function populateCityResults(filterText) {
   }
 }
 
-// ── Mobile bottom sheet ──
-
-function openBottomSheet() {
-  const backdrop = document.getElementById("filter-backdrop");
-  const sheet = document.getElementById("filter-sheet");
-  if (!backdrop || !sheet) return;
-
-  // Sync bottom sheet UI with current store state
-  const state = store.getState();
-
-  const threatChips = document.querySelectorAll("#mobile-threat-chips button");
-  for (const chip of threatChips) {
-    const isActive = chip.dataset.value === state.threat;
-    chip.classList.toggle("bg-indigo-600", isActive);
-    chip.classList.toggle("text-white", isActive);
-    chip.classList.toggle("bg-gray-800", !isActive);
-    chip.classList.toggle("text-gray-400", !isActive);
-  }
-
-  const citySelect = document.getElementById("mobile-city-filter");
-  if (citySelect) {
-    populateMobileCitySelect(citySelect);
-    citySelect.value = state.city || "";
-  }
-
-  const zoneSelect = document.getElementById("mobile-zone-filter");
-  if (zoneSelect) {
-    populateMobileZoneSelect(zoneSelect);
-    zoneSelect.value = state.zone;
-  }
-
-  backdrop.classList.add("open");
-  sheet.classList.add("open");
-}
-
-function closeBottomSheet() {
-  const backdrop = document.getElementById("filter-backdrop");
-  const sheet = document.getElementById("filter-sheet");
-  if (backdrop) backdrop.classList.remove("open");
-  if (sheet) {
-    sheet.classList.remove("open");
-    // Clear drag artifacts after the 0.3s CSS transition completes
-    setTimeout(() => {
-      sheet.style.transform = "";
-      sheet.style.transition = "";
-    }, 350);
-  }
-}
-
-function populateMobileZoneSelect(select) {
-  // Keep the first "All zones" option, clear the rest
-  while (select.options.length > 1) select.remove(1);
-  for (const zoneEn of zoneNamesEn) {
-    const option = document.createElement("option");
-    option.value = zoneEn;
-    option.textContent = zoneDisplayName(zoneEn);
-    select.appendChild(option);
-  }
-}
-
-function populateMobileCitySelect(select) {
-  // Keep the first "All cities" option, clear the rest
-  while (select.options.length > 1) select.remove(1);
-  const cities = getCityList();
-  for (const displayName of cities) {
-    const option = document.createElement("option");
-    // Store the Hebrew key as value (what store expects)
-    option.value = resolveCityName(displayName) || displayName;
-    option.textContent = displayName;
-    select.appendChild(option);
-  }
-}
-
-function wireMobileBottomSheet() {
-  const backdrop = document.getElementById("filter-backdrop");
-  const sheet = document.getElementById("filter-sheet");
-  const applyButton = document.getElementById("mobile-apply");
-  const resetButton = document.getElementById("mobile-reset");
-  const threatChips = document.querySelectorAll("#mobile-threat-chips button");
-  const citySelect = document.getElementById("mobile-city-filter");
-
-  if (!sheet) return;
-
-  // Pending state — only applied on "Apply"
-  let pendingThreat = "all";
-
-  backdrop?.addEventListener("click", closeBottomSheet);
-
-  // Threat chips
-  for (const chip of threatChips) {
-    chip.addEventListener("click", () => {
-      pendingThreat = chip.dataset.value;
-      for (const otherChip of threatChips) {
-        const isActive = otherChip === chip;
-        otherChip.classList.toggle("bg-indigo-600", isActive);
-        otherChip.classList.toggle("text-white", isActive);
-        otherChip.classList.toggle("bg-gray-800", !isActive);
-        otherChip.classList.toggle("text-gray-400", !isActive);
-      }
-    });
-  }
-
-  // Apply
-  applyButton?.addEventListener("click", () => {
-    const zoneSelect = document.getElementById("mobile-zone-filter");
-    const pendingZone = zoneSelect?.value || "all";
-    const cityHe = citySelect?.value || null;
-    const zone = pendingZone !== "all" ? pendingZone : (cityHe ? (cityToZone.get(cityHe) || "all") : "all");
-    const ctx = cityHe ? "city" : (zone !== "all" ? "zone" : "country");
-
-    store.update({
-      threat: pendingThreat,
-      city: cityHe || null,
-      zone,
-      ctx,
-      mapCtx: ctx,
-    });
-    closeBottomSheet();
-  });
-
-  // Reset
-  resetButton?.addEventListener("click", () => {
-    store.reset();
-    closeBottomSheet();
-  });
-
-  // Touch drag to dismiss (only when scrolled to top, with dead zone)
-  let touchStartY = 0;
-  let currentTranslateY = 0;
-  let isDragging = false;
-
-  sheet.addEventListener("touchstart", (event) => {
-    touchStartY = event.touches[0].clientY;
-    currentTranslateY = 0;
-    isDragging = false;
-  }, { passive: true });
-
-  sheet.addEventListener("touchmove", (event) => {
-    // Only allow drag when scrolled to top
-    if (Math.round(sheet.scrollTop) > 0) return;
-
-    const deltaY = event.touches[0].clientY - touchStartY;
-
-    // Dead zone: need 8px downward before committing to drag
-    if (!isDragging && deltaY > 8) {
-      isDragging = true;
-      sheet.style.transition = "none";
-    }
-
-    if (isDragging && deltaY > 0) {
-      currentTranslateY = deltaY;
-      sheet.style.transform = `translateY(${deltaY}px)`;
-      event.preventDefault();
-    }
-  }, { passive: false });
-
-  sheet.addEventListener("touchend", () => {
-    if (!isDragging) return;
-
-    sheet.style.transition = "";
-    if (currentTranslateY > 100) {
-      closeBottomSheet();
-    } else {
-      // Snap back — transform will animate to translateY(0) via .open class
-      sheet.style.transform = "";
-    }
-  });
-}
 
 // ── Language toggle ──
 

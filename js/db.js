@@ -1,5 +1,5 @@
 import * as duckdb from "@duckdb/duckdb-wasm";
-import { israelDayStartUtc, nextIsraelDay } from "./tz.js";
+import { israelDayStartUtc, nextIsraelDay, israelParts } from "./tz.js";
 
 let db = null;
 let conn = null;
@@ -665,7 +665,10 @@ export async function queryDailyShelterDuration(startMs, endMs, ctx, zone, city)
       const minutes = Math.round(mergeAndSum(intervals) / 60000);
       if (minutes > 0) byCategory[cat] = minutes;
     }
-    rows.push({ day_ms, byCategory });
+    // Convert Israel-midnight UTC to calendar-date UTC midnight (matches queryDailyAlertCounts keys)
+    const { year, month, day } = israelParts(day_ms);
+    const utcMidnight = Date.UTC(year, month - 1, day);
+    rows.push({ day_ms: utcMidnight, byCategory });
   }
   return rows;
 }

@@ -127,12 +127,12 @@ const queryDefinitions = {
     run: (filters) => queryEventsByZone(filters.startMs, filters.endMs),
   },
   dailyAlertCounts: {
-    depends: ["startMs", "endMs", "ctx", "zone", "city"],
-    run: (filters) => queryDailyAlertCounts(filters.startMs, filters.endMs, filters.ctx, filters.zone, filters.city),
+    depends: ["ctx", "zone", "city"],
+    run: (filters) => queryDailyAlertCounts(undefined, undefined, filters.ctx, filters.zone, filters.city),
   },
   dailyShelterDuration: {
-    depends: ["startMs", "endMs", "ctx", "zone", "city"],
-    run: (filters) => queryDailyShelterDuration(filters.startMs, filters.endMs, filters.ctx, filters.zone, filters.city),
+    depends: ["ctx", "zone", "city"],
+    run: (filters) => queryDailyShelterDuration(undefined, undefined, filters.ctx, filters.zone, filters.city),
   },
 };
 
